@@ -37,7 +37,16 @@ Plataforma SaaS moderna e premium de gestão para fotógrafos ("StudioHub AI"). 
 - Técnico: dividir server.py em routers/models; contador atómico para numeração; filtros server-side por client_id
 
 ## Next Tasks
-- Próxima fase sugerida: Financeiro avançado (despesas/lucro/fluxo de caixa/relatórios) OU Loja+Stripe.
+- Próxima fase sugerida: Financeiro avançado (despesas/lucro/fluxo de caixa/relatórios) OU Loja+Stripe + emails (Resend).
+
+## Galerias Premium — Fase 7 (2026-07-18)
+- Lista enriquecida: capa, nome, cliente, tipo, data, nº de fotos, estado, cadeado (protegida), botão Abrir
+- Criar galeria: nome, cliente, sessão (pré-preenche tipo/data/cliente), tipo, data, capa (URL), descrição, palavra-passe
+- Página da galeria: cabeçalho elegante (capa + tipo/data/nome/cliente/descrição)
+- Ações por foto (fotógrafo): ♡ favoritar, ⭐ classificação 0-5 estrelas, ✓ selecionar, 💬 comentar, ⬇ download (mock), 🔍 zoom (lightbox), destacar, comparar, eliminar
+- Já existentes reaproveitados: pesquisa IA, seleção IA, partilha por link + palavra-passe + expiração + watermark, portal do cliente
+- Endpoints novos: rate, toggle (favorite/selected), comment (fotógrafo)
+- Testado 104/105 (1 skip AI), sem bloqueios
 
 ## Área do Cliente (Portal) — Fase 6 (2026-07-18)
 - Autenticação JWT (Bearer token em localStorage, bcrypt para hash); rota /portal isolada do app do fotógrafo

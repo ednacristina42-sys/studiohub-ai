@@ -3,10 +3,10 @@ import { useParams, Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   ArrowLeft, Sparkles, Upload, Trash2, Star, Loader2, ImagePlus, Search, Share2, Copy,
-  Heart, CheckCircle2, XCircle, Columns2, X, MessageSquare, Filter,
+  Heart, CheckCircle2, XCircle, Columns2, X, MessageSquare, Filter, Download, Send,
 } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+import { api, fmtDate } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,6 +37,8 @@ export default function GalleryDetail() {
   const [lightbox, setLightbox] = useState(-1);
   const [compare, setCompare] = useState([]);
   const [settings, setSettings] = useState({ password: "", link_expires: "", watermark: false });
+  const [commentFor, setCommentFor] = useState(null);
+  const [commentText, setCommentText] = useState("");
   const fileRef = useRef(null);
 
   const load = () => api.get(`/galleries/${id}`).then((r) => { setGallery(r.data); setSettings({ password: r.data.password || "", link_expires: r.data.link_expires || "", watermark: !!r.data.watermark }); });
@@ -54,6 +56,13 @@ export default function GalleryDetail() {
   const addStock = async () => { await addPhoto(stock[(gallery?.photos?.length || 0) % stock.length], "exemplo.jpg"); toast.success("Foto de exemplo adicionada"); };
   const removePhoto = async (pid) => { await api.delete(`/galleries/${id}/photos/${pid}`); load(); };
   const toggleFeature = async (pid) => { const r = await api.patch(`/galleries/${id}/photos/${pid}/feature`); setGallery(r.data); };
+  const ratePhoto = async (pid, stars) => { const r = await api.patch(`/galleries/${id}/photos/${pid}/rate`, { stars }); setGallery(r.data); };
+  const togglePhoto = async (pid, field) => { const r = await api.patch(`/galleries/${id}/photos/${pid}/toggle`, { field }); setGallery(r.data); };
+  const sendComment = async () => {
+    if (!commentText.trim()) return;
+    const r = await api.post(`/galleries/${id}/photos/${commentFor}/comment`, { text: commentText, author: "Fotógrafo" });
+    setGallery(r.data); setCommentText(""); setCommentFor(null); toast.success("Comentário adicionado");
+  };
 
   const runAI = async () => {
     if (!gallery?.photos?.length) return toast.error("Adicione fotos primeiro");
@@ -105,6 +114,19 @@ export default function GalleryDetail() {
   return (
     <div className="space-y-6">
       <Link to="/galerias" data-testid="back-galleries" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"><ArrowLeft className="h-4 w-4" /> Galerias</Link>
+
+      {gallery.cover && (
+        <div className="relative rounded-2xl overflow-hidden border border-border h-48 md:h-60">
+          <img src={gallery.cover} alt={gallery.title} className="absolute inset-0 h-full w-full object-cover" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent" />
+          <div className="absolute bottom-0 left-0 right-0 p-6">
+            <p className="text-[10px] uppercase tracking-[0.2em] text-white/70 font-semibold">{gallery.type} · {fmtDate(gallery.date || gallery.created_at)}</p>
+            <h2 className="font-display text-3xl md:text-4xl font-light tracking-tight text-white mt-1">{gallery.title}</h2>
+            <p className="text-sm text-white/80 mt-1">{gallery.client_name || "—"}</p>
+            {gallery.description && <p className="text-sm text-white/70 mt-2 max-w-2xl line-clamp-2">{gallery.description}</p>}
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
         <div>
@@ -195,15 +217,28 @@ export default function GalleryDetail() {
                 {p.approval === "rejeitada" && <span className="h-6 w-6 rounded-full bg-zinc-600 flex items-center justify-center text-white" title="Rejeitada"><XCircle className="h-3 w-3" /></span>}
                 {p.comments?.length > 0 && <span className="h-6 rounded-full bg-black/60 flex items-center gap-1 px-2 text-white text-[10px]" title="Comentários"><MessageSquare className="h-3 w-3" />{p.comments.length}</span>}
               </div>
-              <div className="absolute bottom-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Button variant="ghost" size="icon" data-testid={`compare-${p.id}`} onClick={() => toggleCompare(p.id)} className={`h-7 w-7 bg-black/40 backdrop-blur text-white hover:text-primary ${compare.includes(p.id) ? "text-primary" : ""}`}><Columns2 className="h-3.5 w-3.5" /></Button>
-                <Button variant="ghost" size="icon" data-testid={`feature-${p.id}`} onClick={() => toggleFeature(p.id)} className={`h-7 w-7 bg-black/40 backdrop-blur text-white hover:text-amber-400 ${p.featured ? "text-amber-400" : ""}`}><Star className="h-3.5 w-3.5" /></Button>
-                <Button variant="ghost" size="icon" data-testid={`delete-photo-${p.id}`} onClick={() => removePhoto(p.id)} className="h-7 w-7 bg-black/40 backdrop-blur text-white hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button>
+              <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/85 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-wrap items-center justify-center gap-0.5">
+                <button title="Favoritar" data-testid={`pfav-${p.id}`} onClick={() => togglePhoto(p.id, "favorite")} className={`h-7 w-7 rounded-full flex items-center justify-center text-white hover:bg-white/20 ${p.favorite ? "text-rose-400" : ""}`}><Heart className={`h-4 w-4 ${p.favorite ? "fill-current" : ""}`} /></button>
+                {[1, 2, 3, 4, 5].map((n) => <button key={n} title={`${n} estrelas`} data-testid={`pstar-${p.id}-${n}`} onClick={() => ratePhoto(p.id, n)} className="h-6 w-4 flex items-center justify-center"><Star className={`h-3.5 w-3.5 ${(p.stars || 0) >= n ? "text-amber-400 fill-amber-400" : "text-white/50"}`} /></button>)}
+                <button title="Selecionar" data-testid={`psel-${p.id}`} onClick={() => togglePhoto(p.id, "selected")} className={`h-7 w-7 rounded-full flex items-center justify-center text-white hover:bg-white/20 ${p.selected ? "text-primary" : ""}`}><CheckCircle2 className="h-4 w-4" /></button>
+                <button title="Comentar" data-testid={`pcmt-${p.id}`} onClick={() => setCommentFor(p.id)} className="h-7 w-7 rounded-full flex items-center justify-center text-white hover:bg-white/20"><MessageSquare className="h-4 w-4" /></button>
+                <a title="Download" data-testid={`pdl-${p.id}`} href={p.url} download={p.name || "foto.jpg"} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="h-7 w-7 rounded-full flex items-center justify-center text-white hover:bg-white/20"><Download className="h-4 w-4" /></a>
+                <button title="Comparar" data-testid={`compare-${p.id}`} onClick={() => toggleCompare(p.id)} className={`h-7 w-7 rounded-full flex items-center justify-center text-white hover:bg-white/20 ${compare.includes(p.id) ? "text-primary" : ""}`}><Columns2 className="h-4 w-4" /></button>
+                <button title="Destacar" data-testid={`feature-${p.id}`} onClick={() => toggleFeature(p.id)} className={`h-7 w-7 rounded-full flex items-center justify-center text-white hover:bg-amber-400/20 ${p.featured ? "text-amber-400" : ""}`}><Sparkles className="h-4 w-4" /></button>
+                <button title="Eliminar" data-testid={`delete-photo-${p.id}`} onClick={() => removePhoto(p.id)} className="h-7 w-7 rounded-full flex items-center justify-center text-white hover:text-destructive hover:bg-white/20"><Trash2 className="h-4 w-4" /></button>
               </div>
             </motion.div>
           ))}
         </div>
       )}
+
+      <Dialog open={!!commentFor} onOpenChange={(o) => { if (!o) { setCommentFor(null); setCommentText(""); } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle className="font-display font-medium">Comentar fotografia</DialogTitle><DialogDescription>Nota do fotógrafo sobre esta imagem.</DialogDescription></DialogHeader>
+          {(() => { const p = photos.find((x) => x.id === commentFor); return p?.comments?.length ? <div className="space-y-2 max-h-40 overflow-y-auto">{p.comments.map((c, i) => <div key={i} className="text-sm bg-secondary rounded-lg p-2"><span className="font-medium">{c.author}: </span>{c.text}</div>)}</div> : null; })()}
+          <div className="flex gap-2 items-center"><Input data-testid="photo-comment-input" value={commentText} onChange={(e) => setCommentText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendComment()} placeholder="Escreva um comentário..." className="h-11" /><Button data-testid="photo-comment-send" onClick={sendComment} size="icon" className="h-11 w-11 rounded-lg"><Send className="h-4 w-4" /></Button></div>
+        </DialogContent>
+      </Dialog>
 
       {lightbox >= 0 && <Lightbox photos={photos} index={lightbox} onIndex={setLightbox} onClose={() => setLightbox(-1)} watermark={gallery.watermark} />}
     </div>

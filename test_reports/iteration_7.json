@@ -1,0 +1,56 @@
+{
+  "summary": "Iteration 7 (Fase 7 – Galleries premium delivery) validated end-to-end. Backend: 14/14 new gallery tests pass (create with new fields type/date/description/session_id/password/cover; rate stars 0..5 with clamp; toggle favorite/selected + 400 on invalid field; comment append + 400 on empty; feature/share/settings regression) + 90/90 regression from iters 1-6 = 104/105 overall (1 AI test intentionally skipped). Frontend (Playwright): all 12 flows pass — Galleries list renders 3 seeded cards (cover/type/name/client/date/photo count/status/lock icon/Abrir); create-dialog with every new testid works and new gallery appears in list; delete works; GalleryDetail (/galerias/:id) hero header renders cover+type+date+title+client with NO 'fmtDate is not defined' runtime error (previously crashed, now fixed); toolbar (Carregar/Exemplo/Seleção IA/Partilhar) + AI search bar + filter chips all present; per-photo action bar pfav/pstar-*-1..5/psel/pcmt/pdl/compare/feature/delete-photo all clickable and photo-comment-input+photo-comment-send inside dialog work; end-to-end persistence verified via GET /api/galleries/{id} (stars=3, favorite=true, selected=true, comments=1). Regression /portal/login and /definicoes still render. No console/pageerror runtime errors captured during entire flow.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/clients and GET /api/clients/{id}",
+        "issue": "Carry-over from iter 6 — `password_hash: ''` field name still leaks in responses because `response_model=Client` refills the projected-out field with its Pydantic default. Fase 7 does not touch this. Fix: return `_public_client(doc)` and drop `response_model=Client`."
+      },
+      {
+        "endpoint": "POST /api/galleries/{gid}/photos/{pid}/comment",
+        "issue": "No 404 raised when the photo_id does not exist inside the gallery — the endpoint silently no-ops (loops photos, no match, writes back the same photos array). Same behaviour on rate/toggle/feature. Low priority for MVP but should return 404 for unknown pid so the UI/API contract is clear."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration7_galleries.py",
+    "/app/test_reports/pytest/iteration7_galleries.xml",
+    "/app/test_reports/pytest/iteration7_full.xml"
+  ],
+  "action_items": [
+    "(Carry-over) Fix password_hash leak in /api/clients — return _public_client(doc) instead of relying on response_model=Client.",
+    "(Nice-to-have) Return 404 when photo_id is unknown in the rate/toggle/comment/feature endpoints (currently silent no-op).",
+    "(Carry-over) Split server.py (~1400 lines) into modular routers."
+  ],
+  "critical_code_review_comments": [
+    "server.py:579-620 — rate_photo / toggle_photo / comment_photo / feature_photo all iterate photos and silently succeed even when photo_id is not present. Consider raising 404 when the pid is not found in `doc['photos']` to surface bugs.",
+    "server.py:580 rate_photo — `stars = max(0, min(5, int(body.get('stars', 0))))` correctly clamps AND accepts negative / out-of-range values without a 400. That is intentional per spec ('clamped 0..5') and matches the UI star buttons, but downstream clients relying on 422/400 for invalid values will not get them. Documented, not a bug.",
+    "server.py:592 toggle_photo — correctly 400s on invalid field. Good.",
+    "server.py:607 comment_photo — correctly 400s on empty/whitespace text. Good.",
+    "GalleryDetail.jsx:9 — `fmtDate` is now imported from '@/lib/api'. The previous 'fmtDate is not defined' runtime crash is FIXED and verified in browser (no pageerror captured).",
+    "GalleryDetail.jsx:222 — 5 star buttons render 5 sibling <button> in the hover overlay. Rating 0 is not achievable via UI (only 1..5). If a photographer wants to clear a rating, there is no clear-rating button. Minor UX gap; the backend supports stars=0 already, so a small 'X' clear button would complete the flow.",
+    "GalleryDetail.jsx:225 — download <a href={p.url} download={p.name}> works for data: URLs (blob) but for cross-origin http(s) images the browser will ignore the `download` attribute and just open the image. This is documented as MOCK by the problem statement — flagging for completeness.",
+    "Galleries.jsx:65 — selecting a session prefills type/date/client_name correctly (verified behaviour: gallery-session-select triggers form update). Good.",
+    "Galleries.jsx:44 — `remove` uses e.preventDefault() but the delete button is not wrapped in a Link, so preventDefault has no effect; also there is no confirmation dialog before delete. Consider a confirm() or shadcn AlertDialog before destructive action.",
+    "Galleries.jsx card layout — the entire card cover area is a <Link>, so clicking anywhere on the image navigates to detail. That is fine, but the Abrir button is redundantly inside another <Link> AND already navigates via router; both are wrapped in <Link to={...}> which nests anchors — React shouldn't nest <a> tags. Consider removing the outer Link from the card and keeping only the Abrir button (or vice versa). Not a runtime error, but semantically invalid HTML."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration7_galleries.py"
+  ],
+  "success_rate": {
+    "backend": "100% (14/14 iter7 new tests + 90/90 iter1-6 regression = 104/105, 1 AI test intentionally skipped via RUN_AI_TESTS gate)",
+    "frontend": "100% (12/12 flows: list/cards/dialog/create/delete/detail-hero-header/no-fmtDate-crash/toolbar/photo-actions pfav-pstar-psel-pcmt-comment-send/end-to-end persistence via GET /api/galleries/{id}/portal-regression/definicoes-regression)"
+  },
+  "test_credentials": "No auth for photographer app. Portal (regression only): ana.rui@email.pt / cliente123.",
+  "seed_data_creation": "None new. Tests create+delete their own TEST_iter7 galleries.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Fase 7 galleries premium validated. New backend test file: /app/backend/tests/test_iteration7_galleries.py (15 tests, 14 pass + 1 AI-gated skip). Full regression file list: backend_test.py (33), test_iteration4_galleries.py (17), test_iteration5_i18n.py (7), test_iteration6_portal.py (30), test_iteration7_galleries.py (15) = 102 expected, current 104/105 pass. Endpoints validated: POST /api/galleries (new fields), PATCH /api/galleries/{id}/photos/{pid}/rate (0..5 clamped), PATCH /api/galleries/{id}/photos/{pid}/toggle (favorite|selected, 400 on invalid field), POST /api/galleries/{id}/photos/{pid}/comment (400 on empty text). Photographer photo actions are stored on separate fields from client actions: p.favorite / p.selected / p.stars vs p.client_favorite / p.client_selected. GalleryDetail /galerias/:id previously crashed with 'fmtDate is not defined' — now imports it from @/lib/api (line 9) and runs clean. Testids all match the spec: gallery-title-input, gallery-client-select, gallery-session-select, gallery-cover-input, gallery-password-create, save-gallery-btn, gallery-card-{id}, gallery-open-{id}, delete-gallery-{id}; pfav-{pid}, pstar-{pid}-1..5, psel-{pid}, pcmt-{pid}, pdl-{pid}, compare-{pid}, feature-{pid}, delete-photo-{pid}; photo-comment-input, photo-comment-send.",
+  "rca of the issue": "fmtDate crash RCA (FIXED before this iteration): GalleryDetail.jsx used fmtDate(gallery.date || gallery.created_at) in the hero header at line 123 without importing it. Fix applied by main agent: added fmtDate to the import from '@/lib/api' on line 9. Verified: (1) navigating to /galerias/{id} loads with no pageerror; (2) hero header text 'SESSAO · 18/07/2026' rendered correctly for the Casamento Ana & Rui gallery."
+}

@@ -148,6 +148,9 @@ class Photo(BaseModel):
     ai_selected: bool = False
     ai_reason: Optional[str] = ""
     featured: bool = False
+    stars: int = 0
+    favorite: bool = False
+    selected: bool = False
     client_favorite: bool = False
     client_selected: bool = False
     approval: str = "pendente"
@@ -160,6 +163,9 @@ class Gallery(BaseModel):
     client_name: Optional[str] = ""
     project_id: Optional[str] = ""
     session_id: Optional[str] = ""
+    type: str = "sessao"
+    date: Optional[str] = ""
+    description: Optional[str] = ""
     cover: Optional[str] = ""
     photos: List[Photo] = []
     status: str = "pendente"
@@ -175,7 +181,12 @@ class GalleryCreate(BaseModel):
     title: str
     client_name: Optional[str] = ""
     project_id: Optional[str] = ""
+    session_id: Optional[str] = ""
+    type: str = "sessao"
+    date: Optional[str] = ""
+    description: Optional[str] = ""
     cover: Optional[str] = ""
+    password: Optional[str] = ""
     status: str = "pendente"
 
 
@@ -562,6 +573,49 @@ async def feature_photo(gallery_id: str, photo_id: str):
         if p["id"] == photo_id:
             p["featured"] = not p.get("featured", False)
     await db.galleries.update_one({"id": gallery_id}, {"$set": {"photos": photos}})
+    return await db.galleries.find_one({"id": gallery_id}, {"_id": 0})
+
+
+@api_router.patch("/galleries/{gallery_id}/photos/{photo_id}/rate", response_model=Gallery)
+async def rate_photo(gallery_id: str, photo_id: str, body: dict):
+    doc = await db.galleries.find_one({"id": gallery_id})
+    if not doc:
+        raise HTTPException(404, "Galeria não encontrada")
+    stars = max(0, min(5, int(body.get("stars", 0))))
+    for p in doc.get("photos", []):
+        if p["id"] == photo_id:
+            p["stars"] = stars
+    await db.galleries.update_one({"id": gallery_id}, {"$set": {"photos": doc["photos"]}})
+    return await db.galleries.find_one({"id": gallery_id}, {"_id": 0})
+
+
+@api_router.patch("/galleries/{gallery_id}/photos/{photo_id}/toggle", response_model=Gallery)
+async def toggle_photo(gallery_id: str, photo_id: str, body: dict):
+    field = body.get("field")
+    if field not in ("favorite", "selected"):
+        raise HTTPException(400, "Campo inválido")
+    doc = await db.galleries.find_one({"id": gallery_id})
+    if not doc:
+        raise HTTPException(404, "Galeria não encontrada")
+    for p in doc.get("photos", []):
+        if p["id"] == photo_id:
+            p[field] = not p.get(field, False)
+    await db.galleries.update_one({"id": gallery_id}, {"$set": {"photos": doc["photos"]}})
+    return await db.galleries.find_one({"id": gallery_id}, {"_id": 0})
+
+
+@api_router.post("/galleries/{gallery_id}/photos/{photo_id}/comment", response_model=Gallery)
+async def comment_photo(gallery_id: str, photo_id: str, body: dict):
+    text = (body.get("text") or "").strip()
+    if not text:
+        raise HTTPException(400, "Comentário vazio")
+    doc = await db.galleries.find_one({"id": gallery_id})
+    if not doc:
+        raise HTTPException(404, "Galeria não encontrada")
+    for p in doc.get("photos", []):
+        if p["id"] == photo_id:
+            p.setdefault("comments", []).append({"author": body.get("author", "Fotógrafo"), "text": text, "ts": now_iso()})
+    await db.galleries.update_one({"id": gallery_id}, {"$set": {"photos": doc["photos"]}})
     return await db.galleries.find_one({"id": gallery_id}, {"_id": 0})
 
 

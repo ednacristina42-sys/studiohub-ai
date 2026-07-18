@@ -1,0 +1,139 @@
+{
+  "project_name": "StudioHub AI",
+  "theme": "Dark premium with gold accents / Light minimalist with colorful accent",
+  "language": "Portuguese (Portugal)",
+  "typography": {
+    "fonts": {
+      "headings": "Outfit",
+      "body": "Manrope",
+      "mono": "JetBrains Mono"
+    },
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl tracking-tight font-light",
+      "h2": "text-2xl sm:text-3xl tracking-tight font-normal",
+      "h3": "text-xl sm:text-2xl tracking-tight font-medium",
+      "h4": "text-lg sm:text-xl font-medium",
+      "body": "text-base leading-relaxed",
+      "small": "text-sm text-muted-foreground",
+      "overline": "text-xs uppercase tracking-[0.2em] font-semibold"
+    },
+    "rules": [
+      "Never use Inter for headings.",
+      "Use font-light for large headings to create a premium, editorial feel.",
+      "Headlines > 32px MUST use tracking-tight."
+    ]
+  },
+  "colors": {
+    "dark_mode": {
+      "name": "Premium Obsidian & Gold",
+      "background": "bg-zinc-950 (#09090b)",
+      "foreground": "text-zinc-50 (#fafafa)",
+      "primary": "bg-amber-500 text-zinc-950 (#f59e0b)",
+      "primary_hover": "hover:bg-amber-400",
+      "card": "bg-zinc-900/50 (#18181b)",
+      "border": "border-zinc-800/50",
+      "muted": "text-zinc-400",
+      "accent_ai": "bg-amber-500/10 text-amber-500 border border-amber-500/20"
+    },
+    "light_mode": {
+      "name": "Minimalist White & Vibrant Violet",
+      "background": "bg-zinc-50 (#fafafa)",
+      "foreground": "text-zinc-950 (#09090b)",
+      "primary": "bg-violet-600 text-white (#7c3aed)",
+      "primary_hover": "hover:bg-violet-700",
+      "card": "bg-white",
+      "border": "border-zinc-200",
+      "muted": "text-zinc-500",
+      "accent_ai": "bg-violet-600/10 text-violet-700 border border-violet-600/20"
+    },
+    "rules": [
+      "No full-screen gradients. Use solid colors with subtle borders.",
+      "Never use pure black (#000000) or pure grey. Always use zinc (cool grey).",
+      "Primary color should be used sparingly for CTAs and key highlights."
+    ]
+  },
+  "visual_enhancers": {
+    "surfaces": {
+      "sidebar": "Solid background matching theme, 1px border on the right (border-border).",
+      "header": "Crystal Glassmorphism: backdrop-blur-xl bg-background/70 with a delicate 1px border on the bottom.",
+      "cards": "Flat background with 1px subtle border. No shadow in dark mode. Soft shadow-sm in light mode.",
+      "ai_elements": "The 'Tracing Beam' or subtle glow effect for AI smart photo selection features."
+    },
+    "borders_and_radius": {
+      "radius": "rounded-xl for cards, rounded-full for pill buttons.",
+      "borders": "1px crisp borders to expose the grid skeleton (Technical Look)."
+    }
+  },
+  "grids_and_layouts": {
+    "dashboard_structure": "Fixed left sidebar (w-64) + Main content area. Mobile: Hamburger menu opening a sheet.",
+    "spacing_scale": "Generous spacing. Use p-6, p-8, and p-12. Avoid cramped layouts.",
+    "bento_grid": {
+      "mode": "Mode B (High Density) for Dashboard",
+      "columns": "grid-cols-1 md:grid-cols-3 lg:grid-cols-4",
+      "gap": "gap-6",
+      "items": "Summary cards col-span-1, Charts col-span-2 row-span-2, Feed/Lists col-span-1 row-span-2."
+    },
+    "alignment": "Left-align paragraphs, inputs, and dense data. Center-align empty states or hero headers only."
+  },
+  "components": {
+    "buttons": "Modern pill-shaped or slightly rounded (rounded-lg). Explicit hover states (e.g., hover:-translate-y-0.5 transition-transform).",
+    "inputs": "Shadcn UI base, customized with h-11 or h-12 for larger tap targets. Subtle borders.",
+    "photo_gallery": "Masonry grid with group-hover effects. Image overlay max bg-black/40 to ensure image remains visible.",
+    "ai_badge": "Small pill with an icon (Sparkles), glowing border to indicate AI-selected photos.",
+    "tables": "Shadcn UI table for CRM and Financials. Dense spacing, left-aligned, sticky headers."
+  },
+  "motion_and_interaction": {
+    "hover_states": "All interactive elements must change state (color + slight transform).",
+    "transitions": "Use specific properties: transition-colors, transition-transform duration-200 ease-in-out. DO NOT use transition-all.",
+    "loading": "Use skeleton loaders matching card shapes. No generic spinners for main content.",
+    "animations": "Framer motion for staggered list reveals in the photo gallery."
+  },
+  "accessibility": {
+    "contrast": "Ensure text over images has sufficient contrast (use text-shadow or gradient overlays).",
+    "focus": "focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+    "testing": "All interactive elements MUST include data-testid attribute (e.g., data-testid='upload-photo-btn')."
+  },
+  "media_and_images": {
+    "rules": "No placeholder URLs. Use provided high-quality images. Images must not exceed 80vh on mobile.",
+    "urls": {
+      "dashboard_hero": "https://images.pexels.com/photos/7778884/pexels-photo-7778884.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "gallery_fashion": "https://images.pexels.com/photos/7778888/pexels-photo-7778888.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "gallery_wedding_1": "https://images.pexels.com/photos/23876288/pexels-photo-23876288.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "gallery_wedding_2": "https://images.pexels.com/photos/5804239/pexels-photo-5804239.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "projects_cover": "https://images.pexels.com/photos/13699196/pexels-photo-13699196.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "user_avatar": "https://images.pexels.com/photos/36697538/pexels-photo-36697538.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "product_gallery": "https://images.pexels.com/photos/8015871/pexels-photo-8015871.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940"
+    }
+  },
+  "3d_and_creative_libraries": {
+    "icons": "lucide-react (default) or @phosphor-icons/react for a premium duotone look.",
+    "charts": "recharts (Shadcn chart component) for financial and session analytics.",
+    "animations": "framer-motion for micro-interactions and layout transitions.",
+    "toasts": "sonner for all notifications (e.g., 'Fatura enviada', 'Fotos selecionadas pela IA')."
+  },
+  "instructions_to_main_agent": [
+    "Design MUST include a Dark Mode (Premium Gold) and Light Mode (Minimalist Violet) toggle.",
+    "Implement the UI in Portuguese (Portugal). E.g., 'Dashboard', 'Clientes', 'Projetos', 'Galerias', 'Calendário', 'Financeiro'.",
+    "DO NOT use a completely transparent background for the header. Always use a blur or solid color.",
+    "Use pure HTML + Tailwind for complex, custom overlapping layouts (like photo masonry), and Shadcn for logic-heavy components (Forms, Tables, Dialogs).",
+    "Add 'data-testid' to ALL buttons, links, and form inputs.",
+    "Use a generous spacing scale. Add internal padding to containers with borders to prevent text collision."
+  ],
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "You tend to converge toward generic, 'on distribution' outputs. Avoid this: make creative, distinctive frontends that surprise and delight.",
+    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients.",
+    "Don't make generic centered layouts, simplistic gradients, and uniform styling.",
+    "Create depth through layered design elements with z-index hierarchy.",
+    "Use glass-morphism effects with backdrop filters (12-24px blur).",
+    "You MUST NOT apply universal transition. Eg: transition: all. This results in breaking transforms. Always add transitions for specific interactive elements.",
+    "You MUST NOT center align the app container, ie do not add .App { text-align: center; } in the css file.",
+    "Always use modern button styles like pill-shaped, or sharp button with interaction animations & color relevant to the app style.",
+    "NEVER use AI assistant Emoji characters like 🤖🧠💭💡🔮🎯 etc for icons.",
+    "Every interaction needs micro-animations - hover states, transitions, parallax effects, and entrance animations.",
+    "Use 2-3x more spacing than feels comfortable. Cramped designs look cheap.",
+    "Subtle grain textures, noise overlays, custom cursors, selection states, and loading animations: separates good from extraordinary.",
+    "Main agent relies on these image URLs. Missing categories = placeholder text which is FORBIDDEN.",
+    "Prioritize using pre-existing components from src/components/ui when applicable.",
+    "Use sonner for toasts, located in /app/src/components/ui/sonner.tsx"
+  ]
+}

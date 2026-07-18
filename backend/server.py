@@ -1010,6 +1010,10 @@ async def update_payable(pid: str, body: dict):
     fields = {k: body[k] for k in ["supplier", "description", "category", "amount", "due_date", "paid_date", "method", "status", "notes"] if k in body}
     if "amount" in fields:
         fields["amount"] = max(float(fields["amount"] or 0), 0)
+    if fields.get("status") == "pago" and not (fields.get("paid_date") or "").strip():
+        existing = await db.payables.find_one({"id": pid}, {"_id": 0})
+        if existing and not (existing.get("paid_date") or "").strip():
+            fields["paid_date"] = now_iso()[:10]
     await db.payables.update_one({"id": pid}, {"$set": fields})
     doc = await db.payables.find_one({"id": pid}, {"_id": 0})
     if not doc:

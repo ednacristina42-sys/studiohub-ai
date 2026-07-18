@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Plus, Trash2, Receipt, Euro, Clock, CheckCircle2, X, Wallet, ArrowDownCircle, TrendingUp, Landmark } from "lucide-react";
+import { Plus, Trash2, Receipt, Euro, Clock, CheckCircle2, X, Wallet, ArrowDownCircle, TrendingUp, Landmark, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell, Legend,
@@ -76,6 +77,13 @@ export default function Financial() {
 
   return (
     <div className="space-y-6">
+      <div className="flex items-center justify-end">
+        <Link to="/financeiro/relatorios" data-testid="reports-link">
+          <Button variant="outline" className="rounded-lg gap-2 hover:-translate-y-0.5 transition-transform">
+            <BarChart3 className="h-4 w-4" /> Relatórios
+          </Button>
+        </Link>
+      </div>
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         {kpis.map((s, i) => (
           <motion.div key={s.key} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>

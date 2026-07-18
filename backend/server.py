@@ -1,8 +1,10 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header
+from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import io
 import json
 import base64
 import secrets
@@ -1543,6 +1545,189 @@ async def finance_summary():
         "revenue_chart": revenue_chart,
         "expenses_by_category": expenses_by_category,
     }
+
+
+# ---------------- Relatórios Financeiros ----------------
+def _in_range(d, start, end):
+    if not d:
+        return False
+    d = d[:10]
+    if start and d < start:
+        return False
+    if end and d > end:
+        return False
+    return True
+
+
+async def build_financial_report(start="", end="", status="", category=""):
+    invoices = [invoice_totals(i) for i in await db.invoices.find({}, {"_id": 0}).to_list(3000)]
+    payables = [payable_view(p) for p in await db.payables.find({}, {"_id": 0}).to_list(3000)]
+    receivables = [receivable_view(r) for r in await db.receivables.find({}, {"_id": 0}).to_list(3000)]
+
+    # Receita por mês (faturas pagas)
+    months = {}
+    for i in invoices:
+        if i.get("status") == "paga" and _in_range(i.get("issue_date", ""), start, end):
+            m = i.get("issue_date", "")[:7]
+            if m:
+                months[m] = months.get(m, 0) + i["total"]
+    revenue_by_month = [{"month": k, "value": round(v, 2)} for k, v in sorted(months.items())]
+
+    # Despesas por categoria (pagas)
+    cats = {}
+    for p in payables:
+        if p.get("status") == "pago" and _in_range(p.get("paid_date") or p.get("due_date") or "", start, end):
+            if category and p.get("category") != category:
+                continue
+            c = p.get("category", "Outros")
+            cats[c] = cats.get(c, 0) + p.get("amount", 0)
+    expenses_by_category = [{"name": k, "value": round(v, 2)} for k, v in sorted(cats.items(), key=lambda x: -x[1])]
+
+    # Contas a receber por estado
+    r_status = {}
+    for r in receivables:
+        if not _in_range(r.get("due_date", ""), start, end):
+            continue
+        if status and r.get("status") != status:
+            continue
+        s = r.get("status", "pendente")
+        r_status.setdefault(s, {"count": 0, "value": 0})
+        r_status[s]["count"] += 1
+        r_status[s]["value"] += r.get("balance", 0)
+    receivables_by_status = [{"name": k, "count": v["count"], "value": round(v["value"], 2)} for k, v in r_status.items()]
+
+    # Contas a pagar por estado
+    p_status = {}
+    for p in payables:
+        if not _in_range(p.get("due_date", ""), start, end):
+            continue
+        if status and p.get("status") != status:
+            continue
+        if category and p.get("category") != category:
+            continue
+        s = p.get("status", "pendente")
+        p_status.setdefault(s, {"count": 0, "value": 0})
+        p_status[s]["count"] += 1
+        p_status[s]["value"] += p.get("amount", 0)
+    payables_by_status = [{"name": k, "count": v["count"], "value": round(v["value"], 2)} for k, v in p_status.items()]
+
+    # Fluxo de caixa (entradas vs saídas) por mês
+    flow = {}
+    for i in invoices:
+        if i.get("status") == "paga" and _in_range(i.get("issue_date", ""), start, end):
+            m = i.get("issue_date", "")[:7]
+            flow.setdefault(m, {"inflow": 0, "outflow": 0})
+            flow[m]["inflow"] += i["total"]
+    for p in payables:
+        if p.get("status") == "pago" and _in_range(p.get("paid_date") or p.get("due_date") or "", start, end):
+            m = (p.get("paid_date") or p.get("due_date") or "")[:7]
+            if m:
+                flow.setdefault(m, {"inflow": 0, "outflow": 0})
+                flow[m]["outflow"] += p.get("amount", 0)
+    cashflow = [{"month": k, "inflow": round(v["inflow"], 2), "outflow": round(v["outflow"], 2), "net": round(v["inflow"] - v["outflow"], 2)} for k, v in sorted(flow.items())]
+    total_inflow = round(sum(c["inflow"] for c in cashflow), 2)
+    total_outflow = round(sum(c["outflow"] for c in cashflow), 2)
+
+    # Top 10 clientes por faturação
+    clients = {}
+    for i in invoices:
+        if _in_range(i.get("issue_date", ""), start, end):
+            n = i.get("client_name", "—")
+            clients[n] = clients.get(n, 0) + i["total"]
+    top_clients = [{"name": k, "value": round(v, 2)} for k, v in sorted(clients.items(), key=lambda x: -x[1])][:10]
+
+    return {
+        "filters": {"start": start, "end": end, "status": status, "category": category},
+        "revenue_by_month": revenue_by_month,
+        "expenses_by_category": expenses_by_category,
+        "receivables_by_status": receivables_by_status,
+        "payables_by_status": payables_by_status,
+        "cashflow": cashflow,
+        "totals": {"inflow": total_inflow, "outflow": total_outflow, "net": round(total_inflow - total_outflow, 2)},
+        "top_clients": top_clients,
+    }
+
+
+@api_router.get("/reports/financial")
+async def reports_financial(start: str = "", end: str = "", status: str = "", category: str = ""):
+    return await build_financial_report(start, end, status, category)
+
+
+STATUS_LABELS = {
+    "paga": "Paga", "pendente": "Pendente", "cancelada": "Cancelada", "parcial": "Parcial",
+    "pago": "Pago", "vencido": "Vencido", "cancelado": "Cancelado",
+}
+
+
+@api_router.get("/reports/financial/export")
+async def export_financial_report(format: str = "xlsx", start: str = "", end: str = "", status: str = "", category: str = ""):
+    data = await build_financial_report(start, end, status, category)
+    period = f"{start or 'início'} a {end or 'hoje'}"
+
+    if format == "xlsx":
+        from openpyxl import Workbook
+        from openpyxl.styles import Font
+        wb = Workbook()
+
+        def add_sheet(title, headers, rows):
+            ws = wb.create_sheet(title[:31])
+            ws.append(headers)
+            for c in ws[1]:
+                c.font = Font(bold=True)
+            for r in rows:
+                ws.append(r)
+
+        wb.remove(wb.active)
+        add_sheet("Receita por mês", ["Mês", "Receita (€)"], [[r["month"], r["value"]] for r in data["revenue_by_month"]])
+        add_sheet("Despesas por categoria", ["Categoria", "Valor (€)"], [[r["name"], r["value"]] for r in data["expenses_by_category"]])
+        add_sheet("Contas a receber", ["Estado", "Nº", "Saldo (€)"], [[STATUS_LABELS.get(r["name"], r["name"]), r["count"], r["value"]] for r in data["receivables_by_status"]])
+        add_sheet("Contas a pagar", ["Estado", "Nº", "Valor (€)"], [[STATUS_LABELS.get(r["name"], r["name"]), r["count"], r["value"]] for r in data["payables_by_status"]])
+        add_sheet("Fluxo de caixa", ["Mês", "Entradas (€)", "Saídas (€)", "Líquido (€)"], [[c["month"], c["inflow"], c["outflow"], c["net"]] for c in data["cashflow"]])
+        add_sheet("Top 10 clientes", ["Cliente", "Faturação (€)"], [[r["name"], r["value"]] for r in data["top_clients"]])
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                 headers={"Content-Disposition": "attachment; filename=relatorio-financeiro.xlsx"})
+
+    # PDF
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=1.5 * cm, bottomMargin=1.5 * cm)
+    styles = getSampleStyleSheet()
+    elems = [Paragraph("Relatório Financeiro — StudioHub AI", styles["Title"]),
+             Paragraph(f"Período: {period}", styles["Normal"]), Spacer(1, 0.4 * cm)]
+
+    def add_table(title, headers, rows):
+        elems.append(Paragraph(title, styles["Heading2"]))
+        table_data = [headers] + (rows if rows else [["—"] * len(headers)])
+        t = Table(table_data, hAlign="LEFT")
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f2937")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#d1d5db")),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f3f4f6")]),
+            ("PADDING", (0, 0), (-1, -1), 4),
+        ]))
+        elems.append(t)
+        elems.append(Spacer(1, 0.4 * cm))
+
+    add_table("Receita por mês", ["Mês", "Receita (€)"], [[r["month"], f'{r["value"]:.2f}'] for r in data["revenue_by_month"]])
+    add_table("Despesas por categoria", ["Categoria", "Valor (€)"], [[r["name"], f'{r["value"]:.2f}'] for r in data["expenses_by_category"]])
+    add_table("Contas a receber por estado", ["Estado", "Nº", "Saldo (€)"], [[STATUS_LABELS.get(r["name"], r["name"]), str(r["count"]), f'{r["value"]:.2f}'] for r in data["receivables_by_status"]])
+    add_table("Contas a pagar por estado", ["Estado", "Nº", "Valor (€)"], [[STATUS_LABELS.get(r["name"], r["name"]), str(r["count"]), f'{r["value"]:.2f}'] for r in data["payables_by_status"]])
+    add_table("Fluxo de caixa", ["Mês", "Entradas", "Saídas", "Líquido"], [[c["month"], f'{c["inflow"]:.2f}', f'{c["outflow"]:.2f}', f'{c["net"]:.2f}'] for c in data["cashflow"]])
+    add_table("Top 10 clientes por faturação", ["Cliente", "Faturação (€)"], [[r["name"], f'{r["value"]:.2f}'] for r in data["top_clients"]])
+    doc.build(elems)
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="application/pdf",
+                             headers={"Content-Disposition": "attachment; filename=relatorio-financeiro.pdf"})
+
 
 
 @api_router.get("/")

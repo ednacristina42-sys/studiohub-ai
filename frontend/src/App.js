@@ -13,6 +13,7 @@ import Galleries from "@/pages/Galleries";
 import GalleryDetail from "@/pages/GalleryDetail";
 import CalendarPage from "@/pages/CalendarPage";
 import Financial from "@/pages/Financial";
+import Reports from "@/pages/Reports";
 import Orcamentos from "@/pages/Orcamentos";
 import Contratos from "@/pages/Contratos";
 import IA from "@/pages/IA";
@@ -65,6 +66,7 @@ function App() {
               <Route path="/galerias/:id" element={<GalleryDetail />} />
               <Route path="/calendario" element={<CalendarPage />} />
               <Route path="/financeiro" element={<Financial />} />
+              <Route path="/financeiro/relatorios" element={<Reports />} />
               <Route path="/orcamentos" element={<Orcamentos />} />
               <Route path="/contratos" element={<Contratos />} />
               <Route path="/ia" element={<IA />} />

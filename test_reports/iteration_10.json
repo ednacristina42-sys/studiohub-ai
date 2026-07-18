@@ -1,0 +1,68 @@
+{
+  "summary": "Iteration 10 — Módulo 'Relatórios Financeiros' (/financeiro/relatorios) validado end-to-end. BACKEND: 26/26 testes novos passam (test_iteration10_reports.py). Shape do report OK — retorna filters/revenue_by_month/expenses_by_category/receivables_by_status/payables_by_status/cashflow/totals/top_clients; totals={inflow,outflow,net} com net=inflow-outflow; cashflow[m] tem inflow/outflow/net coerentes; top_clients ≤ 10; receivables_by_status e payables_by_status têm {name,count,value}. FILTROS: start=2026-07-01&end=2026-07-31 reduz revenue_by_month a meses '2026-07' e é subset do baseline; período fora do intervalo devolve estruturas vazias e totals=0; status=pago restringe receivables_by_status e payables_by_status apenas ao bucket 'pago' (idem 'pendente'); category=Marketing restringe expenses_by_category apenas a 'Marketing' e uma categoria inexistente devolve payables_by_status=[] e expenses_by_category=[]. EXPORT: GET /reports/financial/export?format=xlsx devolve 200 com content-type 'spreadsheetml' + Content-Disposition attachment + header PK (zip válido) e abre no openpyxl com 6 sheets exatos (Receita por mês, Despesas por categoria, Contas a receber, Contas a pagar, Fluxo de caixa, Top 10 clientes); format=pdf devolve 200 com application/pdf + header %PDF; ambos aceitam start/end/status/category. REGRESSÃO backend full suite: 162 passed + 1 skipped (AI gated) — ZERO quebras noutros módulos. FRONTEND (Playwright): (1) /financeiro/relatorios carrega com os 17 data-testids esperados: reports-back-link, export-pdf-btn, export-excel-btn, filter-start, filter-end, filter-status, filter-category, clear-filters-btn, cashflow-total-inflow/outflow/net, report-revenue/expenses/receivables/payables/cashflow/top-clients; (2) totais iniciais lidos correctamente (Entradas 3690,00 € / Saídas 2210,00 € / Líquido 1480,00 €); (3) filtro de período (2026-07-01..2026-07-31) dispara refetch a GET /api/reports/financial?start=..&end=.. e os totais actualizam automaticamente (Entradas 738,00 € / Saídas 360,00 €); (4) filtro status=Pago e categoria=Marketing disparam refetch com query params correctos; (5) 'Limpar filtros' repõe start/end para '' e volta a repor status/category — verificado; (6) botão PDF abre download 'relatorio-financeiro.pdf' (3731 bytes, header %PDF, HTTP 200) e mostra toast 'Relatório PDF exportado'; (7) botão Excel abre download 'relatorio-financeiro.xlsx' (7935 bytes, header PK, HTTP 200) e toast 'Relatório XLSX exportado'; (8) navegação — 'Voltar ao Financeiro' leva a /financeiro; em /financeiro o botão data-testid=reports-link leva de volta a /financeiro/relatorios. REGRESSÃO frontend: /financeiro continua com 5 KPIs (kpi-revenue_month/receivable/payable/profit/cashflow), 2 charts (revenue-chart, expenses-chart), tabela de Faturas, receivables-section e payables-section presentes; /clientes carrega (heading 'Clientes'); /galerias carrega; /calendario carrega e mostra 3 sessões agendadas. Nenhum PAGEERROR do produto durante o fluxo.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/reports/financial (filtro category)",
+        "issue": "O filtro 'category' é aplicado sobre payables tanto em expenses_by_category (correcto) como em payables_by_status (correcto), mas NÃO é aplicado a receivables_by_status — o que é intencional (categoria só existe em payables). Documentar no /docs seria útil, mas comportamento actual está coerente com a spec."
+      },
+      {
+        "endpoint": "GET /api/clients (carry-over iter 6/7/8/9)",
+        "issue": "Campo password_hash='' continua a vazar por response_model=Client. Não tocado nesta iteração."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "/financeiro/relatorios — Despesas por categoria (recharts Pie)",
+        "issues": ["Em viewport ultra-alto (4000px) o pie chart 'Despesas por categoria' renderiza uma vista parcial (top-arc só) — artefacto conhecido do ResponsiveContainer + Pie quando a área é excessivamente alta. Em viewport normal (1920x1080) renderiza correctamente. Não afecta produção."]
+      },
+      {
+        "screen": "Dev-only overlay",
+        "issues": ["Persiste o webpack-dev-server overlay (ResizeObserver loop) durante interações com recharts — mitigado no script removendo o iframe programaticamente. Não é bug de produto."]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration10_reports.py",
+    "/app/test_reports/pytest/iteration10_reports.xml",
+    "/app/test_reports/pytest/iteration10_full.xml"
+  ],
+  "action_items": [
+    "(Opcional/docs) Documentar que o filtro 'category' só se aplica a expenses_by_category e payables_by_status; receivables_by_status ignora-o intencionalmente.",
+    "(Carry-over iters 6-9) Corrigir leak de password_hash em GET /api/clients (excluir do response_model).",
+    "(Nice-to-have) Considerar loading skeleton nos 6 gráficos enquanto load() de /reports/financial resolve — hoje re-renderiza com 'Sem dados no período' até o refetch chegar (fica ~200ms visível ao trocar filtros)."
+  ],
+  "critical_code_review_comments": [
+    "server.py:1562-1648 build_financial_report — fórmula limpa, agregações consistentes; usa helpers invoice_totals/payable_view/receivable_view. Boa reutilização.",
+    "server.py:1579 usa p.get('paid_date') or p.get('due_date') como fallback de data para expenses_by_category e cashflow — sensato: se o utilizador não preencheu paid_date via PUT (bug documentado no iter9), a despesa continua a contar via due_date. Robusto.",
+    "server.py:1627 cashflow[m].net calculado no map com 2 casas; totals derivados por soma dos meses — consistente com a UI que exibe os 3 cartões.",
+    "server.py:1651-1653 rota GET /reports/financial usa query params com defaults ''. Aceitar 400 para start/end mal-formados seria upgrade — hoje _in_range provavelmente falha silenciosamente devolvendo dataset vazio. Não é bloqueante.",
+    "server.py:1662-1729 export handler mistura xlsx e pdf num único endpoint com switch por 'format'; podia-se separar em duas rotas para clareza, mas é aceitável.",
+    "server.py:1667-1691 xlsx generation com openpyxl in-memory (BytesIO) — bem feito, sem I/O de disco, StreamingResponse.",
+    "server.py:1694-1729 pdf reportlab — nomes de tabelas em Português e labels de estados traduzidos via STATUS_LABELS. ✓",
+    "Reports.jsx:59 useEffect com deps [start,end,status,category] mas eslint-disable-next-line — hoje ok porque load é estável, mas para robustez futura considerar useCallback ou incluir load nas deps.",
+    "Reports.jsx:61-75 exportFile usa responseType:'blob' + createObjectURL — padrão. Toast success/error correto. Botão fica disabled durante export ('A exportar...'). ✓",
+    "Reports.jsx:77 clearFilters repõe TUDO (start, end, status=todos, category=todas) — correcto.",
+    "Reports.jsx:130-143 3 cartões de totais usam data.totals[key] directamente; se data ainda não carregou mostram '—' (bom fallback). ✓",
+    "Reports.jsx renderiza 6 ChartCard components com Empty() fallback quando array vazio — DX excelente. ✓",
+    "server.py continua ~1885 linhas — refactor em routers ainda pendente (carry-over iters 6-9)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration10_reports.py"
+  ],
+  "success_rate": {
+    "backend": "100% (26/26 novos testes iter10 + 136 regressão = 162 passed, 1 skipped AI-gated)",
+    "frontend": "100% (17/17 testids presentes, filtros período+estado+categoria refetch OK, clear filters OK, PDF+XLSX downloads 200 com blob válido, navegação bidireccional /financeiro <-> /financeiro/relatorios OK, regressão de /financeiro + /clientes + /galerias + /calendario OK)"
+  },
+  "test_credentials": "Sem auth para a app do fotógrafo. Sem alteração desde iter 9.",
+  "seed_data_creation": "Nenhum novo seed criado. Testes usam o dataset seed existente (POST /api/seed idempotente via conftest).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Módulo Relatórios validado end-to-end. Rota frontend: /financeiro/relatorios (novo). Endpoints backend: GET /api/reports/financial (server.py:1651-1653, aceita start/end/status/category via query), GET /api/reports/financial/export (server.py:1662-1729, format=xlsx|pdf, mesmos filtros). Helper build_financial_report (server.py:1562-1648) devolve dict com filters/revenue_by_month/expenses_by_category/receivables_by_status/payables_by_status/cashflow/totals/top_clients. Frontend Reports.jsx tem 17 data-testids exactos: reports-back-link, export-pdf-btn, export-excel-btn, filter-start, filter-end, filter-status, filter-category, clear-filters-btn, cashflow-total-{inflow|outflow|net}, report-{revenue|expenses|receivables|payables|cashflow|top-clients}. Navegação: Financial.jsx:81 tem reports-link -> /financeiro/relatorios. Deps novas: openpyxl (xlsx), reportlab (pdf) — ambas já em requirements. Categorias (16): Equipamentos, Marketing, Publicidade, Transporte, Combustível, Alimentação, Freelancers, Fotógrafos, Designers, Impressões, Álbuns, Fornecedores, Software, Assinaturas, Impostos, Outros. Status filter aplica-se a receivables_by_status + payables_by_status apenas. Category filter aplica-se a expenses_by_category + payables_by_status apenas (não a receivables). Ficheiro de testes: /app/backend/tests/test_iteration10_reports.py (26 tests). Regressão full: 162 passed + 1 skipped.",
+  "rca of the issue": "Nenhum bug de produto encontrado. Único ponto de atenção: em viewport de teste 1920x4000 (usado para screenshots) o Pie 'Despesas por categoria' fica truncado — é artefacto do recharts ResponsiveContainer com altura excessiva do parent (h-64 dentro de card mas o layout parent estica). Em viewport normal 1920x1080 renderiza correctamente. Recomenda-se testes de UI usarem 1920x1080 para captures deste módulo específico."
+}

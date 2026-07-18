@@ -37,4 +37,12 @@ Plataforma SaaS moderna e premium de gestão para fotógrafos ("StudioHub AI"). 
 - Técnico: dividir server.py em routers/models; contador atómico para numeração; filtros server-side por client_id
 
 ## Next Tasks
-- Próxima fase sugerida: Galerias Premium + Área do Cliente (login) OU Financeiro avançado. Aguardar escolha do utilizador.
+- Próxima fase sugerida: Financeiro avançado (despesas/lucro/fluxo de caixa/relatórios) OU Loja+Stripe+Área do Cliente com login.
+
+## i18n / Internacionalização (2026-07-18)
+- Camada global de configuração por país: GET/PUT /api/settings (company_name, country, language, locale, currency, timezone, date_format, tax_rate, tax_name, tax_label, address_labels)
+- Presets: Portugal, Brasil, Espanha, EUA, Reino Unido, França, Outro (lib/countries.js) — extensível sem alterar código
+- Formatadores dinâmicos (lib/format.js) + SettingsProvider (lib/settings.jsx); eur()/fmtDate() usam moeda/locale configurados
+- Documento fiscal universal (NIF/CPF-CNPJ/VAT/EIN/Tax ID) e labels de morada (Código Postal/CEP, Distrito/Estado, Concelho/Cidade, Freguesia/Bairro) adaptam-se em Clientes, Orçamentos, Financeiro, perfil do cliente
+- Cliente com campos genéricos: tax_id, postal_code, region, city, district (nif legado mantido)
+- Página Definições (/definicoes) para configurar tudo com pré-visualização em tempo real

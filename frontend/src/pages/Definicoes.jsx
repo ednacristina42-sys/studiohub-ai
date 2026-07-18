@@ -100,7 +100,7 @@ export default function Definicoes() {
         </div>
 
         <div className="border-t border-border pt-5 flex items-center justify-between">
-          <div className="text-sm text-muted-foreground">Pré-visualização: <span className="font-medium text-foreground">{eur(1234.5)}</span> · {form.tax_label} {form.tax_rate}% · {form.tax_name}</div>
+          <div className="text-sm text-muted-foreground">Pré-visualização: <span className="font-medium text-foreground">{(() => { try { return new Intl.NumberFormat(form.locale, { style: "currency", currency: form.currency }).format(1234.5); } catch { return `1234.50 ${form.currency}`; } })()}</span> · {form.tax_label} {form.tax_rate}% · {form.tax_name}</div>
           <Button data-testid="save-settings-page-btn" onClick={save} disabled={saving} className="rounded-lg gap-2 hover:-translate-y-0.5 transition-transform"><Save className="h-4 w-4" /> Guardar</Button>
         </div>
       </Card>

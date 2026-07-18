@@ -5,6 +5,7 @@ import {
   Wallet, ShoppingBag, Globe, Megaphone, Sparkles, Workflow, Settings, Menu, Aperture,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { AiAssistant } from "@/components/AiAssistant";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -102,6 +103,7 @@ export const Layout = () => {
         </header>
         <main className="p-4 md:p-8 max-w-[1500px]"><Outlet /></main>
       </div>
+      <AiAssistant />
     </div>
   );
 };

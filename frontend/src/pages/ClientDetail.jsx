@@ -27,12 +27,16 @@ export default function ClientDetail() {
   const [sessions, setSessions] = useState([]);
   const [galleries, setGalleries] = useState([]);
   const [invoices, setInvoices] = useState([]);
+  const [quotes, setQuotes] = useState([]);
+  const [contracts, setContracts] = useState([]);
 
   useEffect(() => {
     api.get(`/clients/${id}`).then((r) => setClient(r.data)).catch(() => {});
     api.get("/sessions").then((r) => setSessions(r.data));
     api.get("/galleries").then((r) => setGalleries(r.data));
     api.get("/invoices").then((r) => setInvoices(r.data));
+    api.get("/quotes").then((r) => setQuotes(r.data));
+    api.get("/contracts").then((r) => setContracts(r.data));
   }, [id]);
 
   if (!client) return <div className="space-y-4"><Skeleton className="h-32 rounded-xl" /><Skeleton className="h-64 rounded-xl" /></div>;
@@ -40,6 +44,8 @@ export default function ClientDetail() {
   const mySessions = sessions.filter((s) => s.client_name === client.name);
   const myGalleries = galleries.filter((g) => g.client_name === client.name);
   const myInvoices = invoices.filter((i) => i.client_name === client.name);
+  const myQuotes = quotes.filter((q) => q.client_name === client.name);
+  const myContracts = contracts.filter((c) => c.client_name === client.name);
   const history = [
     ...mySessions.map((s) => ({ date: s.date, text: `Sessão: ${s.title}`, icon: Camera })),
     ...myInvoices.map((i) => ({ date: i.issue_date, text: `Fatura ${i.number} — ${eur(i.total)} (${i.status})`, icon: CreditCard })),
@@ -146,8 +152,26 @@ export default function ClientDetail() {
           )}
         </TabsContent>
 
-        <TabsContent value="contratos" className="mt-5"><EmptyTab text="Módulo de contratos em breve." /></TabsContent>
-        <TabsContent value="orcamentos" className="mt-5"><EmptyTab text="Módulo de orçamentos em breve." /></TabsContent>
+        <TabsContent value="contratos" className="mt-5">
+          {myContracts.length === 0 ? <EmptyTab text="Sem contratos para este cliente." /> : (
+            <div className="space-y-3">{myContracts.map((c) => (
+              <Card key={c.id} className="p-4 border-border flex items-center justify-between">
+                <div><p className="font-medium">{c.title}</p><p className="text-xs text-muted-foreground font-mono">{c.number}</p></div>
+                <Badge className={`rounded-full border capitalize ${c.status === "assinado" ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-blue-500/10 text-blue-500 border-blue-500/20"}`}>{c.status}</Badge>
+              </Card>))}
+            </div>
+          )}
+        </TabsContent>
+        <TabsContent value="orcamentos" className="mt-5">
+          {myQuotes.length === 0 ? <EmptyTab text="Sem orçamentos para este cliente." /> : (
+            <div className="space-y-3">{myQuotes.map((q) => (
+              <Card key={q.id} className="p-4 border-border flex items-center justify-between">
+                <div><p className="font-medium">{q.title}</p><p className="text-xs text-muted-foreground font-mono">{q.number}</p></div>
+                <div className="flex items-center gap-3"><span className="font-display font-medium">{eur(q.total)}</span><Badge variant="secondary" className="rounded-full capitalize">{q.status}</Badge></div>
+              </Card>))}
+            </div>
+          )}
+        </TabsContent>
         <TabsContent value="mensagens" className="mt-5"><EmptyTab text="Módulo de mensagens em breve." /></TabsContent>
       </Tabs>
     </div>

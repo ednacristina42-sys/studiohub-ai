@@ -1,0 +1,47 @@
+{
+  "summary": "Iteration 3 backend + frontend testing of StudioHub AI commercial pipeline (Orçamentos, Contratos) + AI Assistant. 33/33 pytest tests passed. All new UI flows validated via Playwright including quote conversions and contract digital signature. AI chat via OpenAI gpt-5.4 returned coherent Portuguese responses referencing unpaid clients.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Global (dev overlay)", "issues": ["CRA/Webpack dev overlay shows 'ResizeObserver loop completed with undelivered notifications' on some route changes. It is a known cosmetic warning from framer-motion / Radix layouts and does NOT reproduce with plain user interaction (no console errors captured after dismissal). In production build the overlay will not appear. Consider adding a global ResizeObserver polyfill suppressor if the warning is undesirable."]},
+      {"screen": "Radix Dialogs (from iteration 2)", "issues": ["Orçamentos & Contratos dialogs correctly include <DialogDescription> now — the previous a11y warning is resolved for these dialogs."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Low, cosmetic) Suppress ResizeObserver loop warning in dev by adding `window.addEventListener('error', (e) => { if (e.message.includes('ResizeObserver loop')) { e.stopImmediatePropagation(); } })` in index.js so the CRA overlay does not appear during navigation.",
+    "(Low) Consider adding server-side filter `/api/contracts?client_id=` and `/api/quotes?client_id=` — ClientDetail currently loads all contracts/quotes and filters by name client-side."
+  ],
+  "critical_code_review_comments": [
+    "server.py has grown to 950+ lines. Overdue for split into routers/{clients,sessions,galleries,quotes,contracts,invoices,ai,templates}.py + models.py.",
+    "Auto-numbering for Invoice / Quote / Contract uses `count_documents + 1`. Race-prone under concurrent POSTs. Use a Mongo counters collection with atomic $inc for production safety.",
+    "POST /api/ai/chat does not replay previous session messages to the LLM — only the new user message is sent. The endpoint stores history but never re-injects it, so multi-turn context is lost between requests within the same session_id. Consider fetching prior turns from db.ai_messages and calling chat.add_message() before send_message() for continuity.",
+    "AI chat exposes the studio's full client list, invoice totals, and unpaid amounts as system-prompt context. This is intentional but there is no way for the user to opt out. Document this behaviour or make context injection configurable.",
+    "quote_to_contract() uses the hard-coded 'servicos' template even when the source quote used a specialised template (e.g. casamento). Consider mapping the quote template id to a matching contract template when available.",
+    "Sign endpoint (POST /contracts/{id}/sign) does not verify the contract exists BEFORE the update — an unknown id passes the update_one silently then falls through to the 404 check. It works but should short-circuit with a find_one first for symmetry with other endpoints.",
+    "Frontend AiChat sessionRef persists per component mount but is NOT saved to localStorage — refreshing the page loses the conversation even though history exists on the server. Consider persisting session_id in localStorage and pre-loading /api/ai/history on mount.",
+    "Orcamentos.jsx save() button has no loading state; a slow network could allow double-submit and duplicate quote numbers.",
+    "Contratos.jsx sign() uses view.id without disabling the button while awaiting — could double-sign. Minor.",
+    "All new interactive elements have consistent data-testid attributes — excellent testability."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "success_rate": {"backend": "100% (33/33)", "frontend": "100% (Orçamentos + Contratos + AI + regression)"},
+  "test_credentials": "N/A — no authentication in this app.",
+  "seed_data_creation": "POST /api/seed idempotent. Seeds now include 5 clients + 5 sessions + 3 galleries + 3 invoices + 2 quotes (ORC-2026-0001 enviado, ORC-2026-0002 aprovado) + 2 contracts (CTR-2026-0001 assinado, CTR-2026-0002 enviado). All TEST_ prefixed items created during Playwright were cleaned up.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iteration 3 fully passes. Backend pytest suite at /app/backend/tests/backend_test.py (33 tests, ~5s) covers: templates, quotes CRUD + auto-numbering ORC-YYYY-NNNN + status + conversions (to invoice with matching totals; to contract with template body auto-filled + quote link), contracts CRUD + auto-numbering CTR-YYYY-NNNN + template body auto-fill + patch status + sign (requires non-empty signer_name, sets status=assinado + signed_at), AI chat (real OpenAI gpt-5.4 ~3-8s, verifies Portuguese reply mentions unpaid clients Ana/Ferreira/pendente), AI history endpoint, + regression on clients/sessions/invoices/dashboard/seed. Frontend Playwright validated: Orçamentos create-with-template → send → approve → convert-to-contract → convert-to-invoice → delete; Contratos create-from-template with auto-filled body → view → sign digitally → status=assinado; AI FAB opens, 4 suggestion chips work, manual send/receive works, /ia full page renders; ClientDetail has tab-quotes and tab-contracts and filters correctly. Test cleanup performed. Only cosmetic issue: CRA dev-overlay occasionally shows ResizeObserver loop warning — non-blocking, no console errors after dismissal.",
+  "rca of the issue": "No blocking issues found. The one cosmetic finding — CRA dev-server overlay 'ResizeObserver loop completed with undelivered notifications' — is a well-known browser warning triggered by rapid layout re-measures during framer-motion/Radix Select transitions. It does not break functionality (all clicks succeed after dismissing the overlay via JS click) and disappears entirely in production builds. Recommended one-line mitigation in /app/frontend/src/index.js: `window.addEventListener('error', (e) => { if (e.message?.includes('ResizeObserver loop')) e.stopImmediatePropagation(); });`"
+}

@@ -193,6 +193,60 @@ class InvoiceCreate(BaseModel):
     notes: Optional[str] = ""
 
 
+class Quote(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    number: str
+    client_name: str
+    title: str = "Proposta fotográfica"
+    status: str = "rascunho"
+    items: List[InvoiceItem] = []
+    tax_rate: float = 23
+    valid_until: Optional[str] = ""
+    notes: Optional[str] = ""
+    template: Optional[str] = "personalizado"
+    contract_id: Optional[str] = ""
+    invoice_id: Optional[str] = ""
+    created_at: str = Field(default_factory=now_iso)
+
+
+class QuoteCreate(BaseModel):
+    client_name: str
+    title: str = "Proposta fotográfica"
+    status: str = "rascunho"
+    items: List[InvoiceItem] = []
+    tax_rate: float = 23
+    valid_until: Optional[str] = ""
+    notes: Optional[str] = ""
+    template: Optional[str] = "personalizado"
+
+
+class Contract(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    number: str
+    client_name: str
+    title: str = "Contrato de prestação de serviços"
+    body: str = ""
+    status: str = "rascunho"
+    signer_name: Optional[str] = ""
+    signed_at: Optional[str] = ""
+    template: Optional[str] = "personalizado"
+    quote_id: Optional[str] = ""
+    created_at: str = Field(default_factory=now_iso)
+
+
+class ContractCreate(BaseModel):
+    client_name: str
+    title: str = "Contrato de prestação de serviços"
+    body: str = ""
+    template: Optional[str] = "personalizado"
+    quote_id: Optional[str] = ""
+
+
+class AiChatIn(BaseModel):
+    message: str
+    session_id: Optional[str] = ""
+
+
 # ---------------- Helpers ----------------
 def clean(doc):
     doc.pop("_id", None)
@@ -625,7 +679,254 @@ async def seed():
     inv3.issue_date = dt(-9)
     await db.invoices.insert_many([inv1.model_dump(), inv2.model_dump(), inv3.model_dump()])
 
+    q1 = Quote(number=f"ORC-{yr}-0001", client_name="Beatriz Costa", title="Sessão de Retrato Corporativo",
+               status="enviado", template="retrato", valid_until=dt(20),
+               items=[InvoiceItem(description="Sessão de retrato (1h)", quantity=1, price=250),
+                      InvoiceItem(description="10 fotografias editadas", quantity=1, price=100)], tax_rate=23)
+    q2 = Quote(number=f"ORC-{yr}-0002", client_name="João Marques", title="Reportagem de Batizado",
+               status="aprovado", template="personalizado", valid_until=dt(10),
+               items=[InvoiceItem(description="Reportagem batizado", quantity=1, price=600)], tax_rate=23)
+    await db.quotes.insert_many([q1.model_dump(), q2.model_dump()])
+
+    ctr_body = CONTRACT_TEMPLATES[1]["body"].format(cliente="Ana & Rui Ferreira", titulo="Casamento Quinta dos Sonhos", valor="3 936,00 €", data=dt(-2))
+    c1 = Contract(number=f"CTR-{yr}-0001", client_name="Ana & Rui Ferreira", title="Casamento Quinta dos Sonhos",
+                  body=ctr_body, status="assinado", template="casamento", signer_name="Ana Ferreira", signed_at=now_iso())
+    c2 = Contract(number=f"CTR-{yr}-0002", client_name="Studio Belle Mode", title="Editorial Primavera 2026",
+                  body=CONTRACT_TEMPLATES[0]["body"].format(cliente="Studio Belle Mode", titulo="Editorial Primavera 2026", valor="2 214,00 €", data=dt(-1)),
+                  status="enviado", template="servicos")
+    await db.contracts.insert_many([c1.model_dump(), c2.model_dump()])
+
     return {"seeded": True}
+
+
+# ---------------- Templates ----------------
+QUOTE_TEMPLATES = [
+    {"id": "casamento", "name": "Casamento", "tax_rate": 23, "items": [
+        {"description": "Cobertura fotográfica (8h)", "quantity": 1, "price": 1500},
+        {"description": "Álbum premium 30x30", "quantity": 1, "price": 450},
+        {"description": "Galeria online + downloads", "quantity": 1, "price": 150}]},
+    {"id": "retrato", "name": "Sessão de Retrato", "tax_rate": 23, "items": [
+        {"description": "Sessão de retrato (1h)", "quantity": 1, "price": 250},
+        {"description": "10 fotografias editadas", "quantity": 1, "price": 100}]},
+    {"id": "produto", "name": "Fotografia de Produto", "tax_rate": 23, "items": [
+        {"description": "Sessão de produto (meio dia)", "quantity": 1, "price": 600},
+        {"description": "Edição avançada por foto", "quantity": 10, "price": 15}]},
+]
+CONTRACT_TEMPLATES = [
+    {"id": "servicos", "name": "Prestação de Serviços", "body": (
+        "CONTRATO DE PRESTAÇÃO DE SERVIÇOS FOTOGRÁFICOS\n\n"
+        "Entre o Estúdio StudioHub AI (Prestador) e {cliente} (Cliente).\n\n"
+        "1. OBJETO — O Prestador compromete-se a realizar o serviço fotográfico \"{titulo}\".\n"
+        "2. VALOR — O valor total acordado é de {valor}, com IVA incluído.\n"
+        "3. DATA — O serviço será realizado na data acordada entre as partes.\n"
+        "4. ENTREGA — As fotografias serão entregues em galeria online até 30 dias após a sessão.\n"
+        "5. DIREITOS — O Prestador mantém os direitos de autor; o Cliente recebe licença de uso pessoal.\n\n"
+        "Data: {data}\n\nAssinatura do Cliente: ______________________")},
+    {"id": "casamento", "name": "Casamento", "body": (
+        "CONTRATO DE COBERTURA DE CASAMENTO\n\n"
+        "Entre o Estúdio StudioHub AI e {cliente}.\n\n"
+        "1. EVENTO — Cobertura fotográfica do casamento \"{titulo}\".\n"
+        "2. VALOR — {valor} (IVA incluído). Sinal de 30% na assinatura.\n"
+        "3. ENTREGA — Galeria online em 45 dias; álbum em 90 dias.\n"
+        "4. CANCELAMENTO — O sinal não é reembolsável.\n\n"
+        "Data: {data}\n\nAssinatura do Cliente: ______________________")},
+]
+
+
+@api_router.get("/templates")
+async def get_templates():
+    return {"quotes": QUOTE_TEMPLATES, "contracts": CONTRACT_TEMPLATES}
+
+
+# ---------------- Quotes ----------------
+@api_router.get("/quotes")
+async def list_quotes():
+    docs = await db.quotes.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return [invoice_totals(d) for d in docs]
+
+
+@api_router.get("/quotes/{quote_id}")
+async def get_quote(quote_id: str):
+    doc = await db.quotes.find_one({"id": quote_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Orçamento não encontrado")
+    return invoice_totals(doc)
+
+
+@api_router.post("/quotes")
+async def create_quote(payload: QuoteCreate):
+    count = await db.quotes.count_documents({})
+    number = f"ORC-{datetime.now().year}-{count + 1:04d}"
+    obj = Quote(number=number, **payload.model_dump())
+    doc = obj.model_dump()
+    await db.quotes.insert_one(doc)
+    return invoice_totals(clean(doc))
+
+
+@api_router.put("/quotes/{quote_id}")
+async def update_quote(quote_id: str, payload: QuoteCreate):
+    if not await db.quotes.find_one({"id": quote_id}):
+        raise HTTPException(404, "Orçamento não encontrado")
+    await db.quotes.update_one({"id": quote_id}, {"$set": payload.model_dump()})
+    return invoice_totals(await db.quotes.find_one({"id": quote_id}, {"_id": 0}))
+
+
+@api_router.patch("/quotes/{quote_id}/status")
+async def update_quote_status(quote_id: str, body: dict):
+    await db.quotes.update_one({"id": quote_id}, {"$set": {"status": body.get("status", "rascunho")}})
+    doc = await db.quotes.find_one({"id": quote_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Orçamento não encontrado")
+    return invoice_totals(doc)
+
+
+@api_router.delete("/quotes/{quote_id}")
+async def delete_quote(quote_id: str):
+    await db.quotes.delete_one({"id": quote_id})
+    return {"ok": True}
+
+
+@api_router.post("/quotes/{quote_id}/convert-to-invoice")
+async def quote_to_invoice(quote_id: str):
+    q = await db.quotes.find_one({"id": quote_id}, {"_id": 0})
+    if not q:
+        raise HTTPException(404, "Orçamento não encontrado")
+    count = await db.invoices.count_documents({})
+    inv = Invoice(number=f"{datetime.now().year}-{count + 1:04d}", client_name=q["client_name"],
+                  items=[InvoiceItem(**i) for i in q.get("items", [])], tax_rate=q.get("tax_rate", 23),
+                  notes=f"Gerada a partir do orçamento {q['number']}")
+    await db.invoices.insert_one(inv.model_dump())
+    await db.quotes.update_one({"id": quote_id}, {"$set": {"status": "convertido", "invoice_id": inv.id}})
+    return invoice_totals(inv.model_dump())
+
+
+@api_router.post("/quotes/{quote_id}/convert-to-contract")
+async def quote_to_contract(quote_id: str):
+    q = await db.quotes.find_one({"id": quote_id}, {"_id": 0})
+    if not q:
+        raise HTTPException(404, "Orçamento não encontrado")
+    tot = invoice_totals(dict(q))
+    tmpl = next((t for t in CONTRACT_TEMPLATES if t["id"] == "servicos"), CONTRACT_TEMPLATES[0])
+    body = tmpl["body"].format(cliente=q["client_name"], titulo=q.get("title", "Serviço"),
+                               valor=f"{tot['total']:.2f} €", data=today().isoformat())
+    count = await db.contracts.count_documents({})
+    c = Contract(number=f"CTR-{datetime.now().year}-{count + 1:04d}", client_name=q["client_name"],
+                 title=q.get("title", "Contrato"), body=body, template="servicos", quote_id=quote_id)
+    await db.contracts.insert_one(c.model_dump())
+    await db.quotes.update_one({"id": quote_id}, {"$set": {"contract_id": c.id}})
+    return c.model_dump()
+
+
+# ---------------- Contracts ----------------
+@api_router.get("/contracts")
+async def list_contracts():
+    return await db.contracts.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+
+
+@api_router.get("/contracts/{contract_id}")
+async def get_contract(contract_id: str):
+    doc = await db.contracts.find_one({"id": contract_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Contrato não encontrado")
+    return doc
+
+
+@api_router.post("/contracts")
+async def create_contract(payload: ContractCreate):
+    count = await db.contracts.count_documents({})
+    number = f"CTR-{datetime.now().year}-{count + 1:04d}"
+    body = payload.body
+    if not body and payload.template:
+        tmpl = next((t for t in CONTRACT_TEMPLATES if t["id"] == payload.template), None)
+        if tmpl:
+            body = tmpl["body"].format(cliente=payload.client_name, titulo=payload.title, valor="a acordar", data=today().isoformat())
+    obj = Contract(number=number, body=body, **payload.model_dump(exclude={"body"}))
+    doc = obj.model_dump()
+    await db.contracts.insert_one(doc)
+    return clean(doc)
+
+
+@api_router.put("/contracts/{contract_id}")
+async def update_contract(contract_id: str, payload: ContractCreate):
+    if not await db.contracts.find_one({"id": contract_id}):
+        raise HTTPException(404, "Contrato não encontrado")
+    await db.contracts.update_one({"id": contract_id}, {"$set": payload.model_dump()})
+    return await db.contracts.find_one({"id": contract_id}, {"_id": 0})
+
+
+@api_router.patch("/contracts/{contract_id}/status")
+async def update_contract_status(contract_id: str, body: dict):
+    await db.contracts.update_one({"id": contract_id}, {"$set": {"status": body.get("status", "rascunho")}})
+    doc = await db.contracts.find_one({"id": contract_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Contrato não encontrado")
+    return doc
+
+
+@api_router.post("/contracts/{contract_id}/sign")
+async def sign_contract(contract_id: str, body: dict):
+    signer = body.get("signer_name", "").strip()
+    if not signer:
+        raise HTTPException(400, "Nome de assinatura obrigatório")
+    await db.contracts.update_one({"id": contract_id}, {"$set": {"status": "assinado", "signer_name": signer, "signed_at": now_iso()}})
+    doc = await db.contracts.find_one({"id": contract_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Contrato não encontrado")
+    return doc
+
+
+@api_router.delete("/contracts/{contract_id}")
+async def delete_contract(contract_id: str):
+    await db.contracts.delete_one({"id": contract_id})
+    return {"ok": True}
+
+
+# ---------------- AI Assistant ----------------
+@api_router.get("/ai/history/{session_id}")
+async def ai_history(session_id: str):
+    return await db.ai_messages.find({"session_id": session_id}, {"_id": 0}).sort("ts", 1).to_list(200)
+
+
+@api_router.post("/ai/chat")
+async def ai_chat(payload: AiChatIn):
+    session_id = payload.session_id or str(uuid.uuid4())
+
+    clients = await db.clients.find({}, {"_id": 0}).to_list(500)
+    invoices = [invoice_totals(i) for i in await db.invoices.find({}, {"_id": 0}).to_list(500)]
+    sessions = await db.sessions.find({}, {"_id": 0}).to_list(500)
+    unpaid = [f"{i['client_name']} — {i['number']} ({i['total']:.2f} €)" for i in invoices if i.get("status") == "pendente"]
+    upcoming = [f"{s['title']} — {s['client_name']} ({s.get('date','')})" for s in sessions if s.get("date", "") >= today().isoformat()][:8]
+
+    context = (
+        f"Dados do estúdio (usa apenas se relevante):\n"
+        f"- Total de clientes: {len(clients)}\n"
+        f"- Clientes: {', '.join(c['name'] for c in clients[:15])}\n"
+        f"- Faturas por pagar: {'; '.join(unpaid) if unpaid else 'nenhuma'}\n"
+        f"- Próximas sessões: {'; '.join(upcoming) if upcoming else 'nenhuma'}\n"
+    )
+    system = (
+        "És o assistente inteligente do StudioHub AI, uma plataforma de gestão para fotógrafos. "
+        "Ajudas o fotógrafo a gerir o negócio: redigir orçamentos, contratos, emails para clientes, "
+        "campanhas de marketing, resumos e sugestões. Respondes SEMPRE em português de Portugal, "
+        "de forma clara, profissional e concisa. Quando te pedirem para criar um orçamento, contrato ou email, "
+        "produz o conteúdo pronto a usar, bem estruturado.\n\n" + context
+    )
+
+    try:
+        chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"assist-{session_id}", system_message=system).with_model("openai", "gpt-5.4")
+        # replay short history for continuity
+        reply = await chat.send_message(UserMessage(text=payload.message))
+        reply = reply if isinstance(reply, str) else str(reply)
+    except Exception as e:
+        logging.warning(f"AI chat failed: {e}")
+        raise HTTPException(500, "O assistente não está disponível de momento.")
+
+    ts = now_iso()
+    await db.ai_messages.insert_many([
+        {"session_id": session_id, "role": "user", "content": payload.message, "ts": ts},
+        {"session_id": session_id, "role": "assistant", "content": reply, "ts": now_iso()},
+    ])
+    return {"session_id": session_id, "reply": reply}
 
 
 @api_router.get("/")

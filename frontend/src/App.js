@@ -13,15 +13,15 @@ import Galleries from "@/pages/Galleries";
 import GalleryDetail from "@/pages/GalleryDetail";
 import CalendarPage from "@/pages/CalendarPage";
 import Financial from "@/pages/Financial";
+import Orcamentos from "@/pages/Orcamentos";
+import Contratos from "@/pages/Contratos";
+import IA from "@/pages/IA";
 import ComingSoon from "@/pages/ComingSoon";
 
 const soon = [
-  { path: "/contratos", title: "Contratos", desc: "Modelos de contrato, assinatura digital e gestão de estados." },
-  { path: "/orcamentos", title: "Orçamentos", desc: "Crie propostas profissionais e converta-as em faturas." },
   { path: "/loja", title: "Loja", desc: "Venda fotografias, impressões, álbuns e produtos com checkout." },
   { path: "/website", title: "Website", desc: "Portfólio, blog, SEO e domínio personalizado." },
   { path: "/marketing", title: "Marketing", desc: "Email, WhatsApp, redes sociais e landing pages." },
-  { path: "/ia", title: "Inteligência Artificial", desc: "Assistente que cria orçamentos, agenda sessões e organiza fotos." },
   { path: "/automacoes", title: "Automações", desc: "Fluxos automáticos para poupar horas de trabalho." },
   { path: "/definicoes", title: "Definições", desc: "Perfil do estúdio, equipa, faturação e integrações." },
 ];
@@ -43,6 +43,9 @@ function App() {
               <Route path="/galerias/:id" element={<GalleryDetail />} />
               <Route path="/calendario" element={<CalendarPage />} />
               <Route path="/financeiro" element={<Financial />} />
+              <Route path="/orcamentos" element={<Orcamentos />} />
+              <Route path="/contratos" element={<Contratos />} />
+              <Route path="/ia" element={<IA />} />
               {soon.map((s) => (
                 <Route key={s.path} path={s.path} element={<ComingSoon title={s.title} desc={s.desc} />} />
               ))}

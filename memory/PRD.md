@@ -17,21 +17,24 @@ Plataforma SaaS moderna e premium de gestão para fotógrafos ("StudioHub AI"). 
 - Fotos guardadas como base64 data URLs ou URLs http no MongoDB
 
 ## Implemented (2026-07-18)
-- Layout com sidebar + header glassmorphism, toggle de tema claro/escuro
-- Dashboard: cartões de estatísticas, gráfico de receita (area), estado de projetos (pie), próximas sessões
-- Clientes (CRM): criar/listar/eliminar com etiquetas
-- Projetos: criar/listar/eliminar, capa, estado, orçamento
-- Galerias: criar/listar/eliminar; detalhe com upload (base64), fotos exemplo, masonry
-- IA seleção de fotos: pontua cada foto (0-100), tags + justificação PT, marca top ~40% como escolha IA
-- Calendário: agendar/listar/eliminar sessões agrupadas por data
-- Financeiro: faturas/orçamentos com itens, IVA, totais, estado, eliminação
-- Seed automático de dados demo (idempotente)
+- Layout com sidebar completa agrupada + toggle de tema claro/escuro
+- Dashboard avançado: 9 KPIs, 4 gráficos (receita, sessões/mês, vendas por serviço, origem clientes), ações rápidas, próximas sessões, aniversários
+- Clientes (CRM completo): pesquisa, filtros, favoritos, etiquetas, perfil com separadores (sessões, galerias, contratos, orçamentos, pagamentos, histórico/linha temporal)
+- Sessões: vistas Lista / Calendário (mensal) / Kanban (drag & drop), estados, valor, fotógrafo
+- Galerias + IA seleção de fotos (gpt-5.4 visão)
+- Orçamentos: editor com templates, aprovação (enviar/aprovar/rejeitar), conversão automática em Contrato e Fatura, pré-visualização
+- Contratos: modelos com variáveis auto-preenchidas, editor, assinatura digital, estados
+- Assistente de IA (gpt-5.4): chat flutuante em toda a plataforma + página /ia, com contexto do negócio (clientes, faturas por pagar, sessões) e memória multi-turno
+- Financeiro: faturas/orçamentos com IVA, totais, estados
+- Seed automático idempotente
 
-## Backlog
-- P1: Autenticação (JWT ou Google), entrega/partilha de galeria com cliente (link público)
-- P1: Object storage dedicado para fotos (em vez de base64 no Mongo) para escala
-- P2: Exportar faturas PDF, integração de pagamentos (Stripe), estatísticas avançadas
-- P2: Download async de imagens (httpx) + concorrência na análise IA; contador de faturas concurrency-safe
+## Backlog (fases seguintes do pedido alargado)
+- P1: Loja online + checkout Stripe + cupões; Área do Cliente com login próprio
+- P1: Financeiro avançado (despesas, lucro, fluxo de caixa, relatórios, dashboard financeiro)
+- P1: Galerias premium (proteção por palavra-passe, watermark, downloads protegidos, partilha por link, marcação para álbum)
+- P2: Automações (email/WhatsApp/SMS, gatilhos, fluxos); Marketing (landing pages, blog, SEO, newsletter, agendamento redes sociais)
+- P2: Definições/Administração; pesquisa global; atalhos de teclado; widgets configuráveis; CRM pipeline de leads + tarefas/follow-up automático
+- Técnico: dividir server.py em routers/models; contador atómico para numeração; filtros server-side por client_id
 
 ## Next Tasks
-- Aguardar feedback do utilizador; potencial: entrega de galeria ao cliente e autenticação.
+- Próxima fase sugerida: Galerias Premium + Área do Cliente (login) OU Financeiro avançado. Aguardar escolha do utilizador.

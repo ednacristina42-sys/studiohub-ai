@@ -912,9 +912,14 @@ async def ai_chat(payload: AiChatIn):
         "produz o conteúdo pronto a usar, bem estruturado.\n\n" + context
     )
 
+    # Replay recent conversation history for multi-turn continuity
+    prior = await db.ai_messages.find({"session_id": session_id}, {"_id": 0}).sort("ts", 1).to_list(20)
+    if prior:
+        convo = "\n".join(f"{'Fotógrafo' if m['role'] == 'user' else 'Assistente'}: {m['content']}" for m in prior[-8:])
+        system += f"\n\nHistórico recente da conversa:\n{convo}"
+
     try:
         chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"assist-{session_id}", system_message=system).with_model("openai", "gpt-5.4")
-        # replay short history for continuity
         reply = await chat.send_message(UserMessage(text=payload.message))
         reply = reply if isinstance(reply, str) else str(reply)
     except Exception as e:

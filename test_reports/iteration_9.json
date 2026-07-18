@@ -1,0 +1,70 @@
+{
+  "summary": "Iteration 9 — Módulo 'Contas a Pagar' dentro de /financeiro validado end-to-end. Backend: 19/19 testes novos passam (list ordenada asc por vencimento, GET /api/payables/categories = 16 categorias exatas, POST create (pendente com auto-status 'vencido' quando due_date<hoje; pago/cancelado permanecem inalterados), clamp de amount negativo a 0 no POST e no PUT, PUT persistência via GET, POST /{id}/pay define status=pago+paid_date, 404 em pay/put para id inexistente, DELETE remove, integração /finance/summary: KPI 'payable' aumenta ao criar pendente/vencido e diminui ~igual ao valor ao pagar; 'expenses_by_category' (Software bucket) cresce ~igual ao valor pago; conta 'cancelado' NÃO entra no KPI). Regressão full backend: 136 passed + 1 skipped (AI gated) em toda a suite — ZERO regressões nos módulos anteriores. Frontend (Playwright): 100% dos flows passam — (1) /financeiro carrega os 5 KPIs [kpi-revenue_month/receivable/payable/profit/cashflow] e 2 charts [revenue-chart/expenses-chart]; (2) payables-section aparece ABAIXO de receivables-section (DOM index 61>33) com colunas Fornecedor/Descrição/Categoria/Valor/Vencimento/Método/Estado/Ações; (3) add-payable-btn abre diálogo; preencheu payable-supplier-input, payable-description-input, payable-category-select (Marketing), payable-amount-input=999.99, payable-due-input, payable-method-select (MB Way), payable-notes-input; save-payable-btn cria e a linha aparece; (4) KPI kpi-payable atualiza AUTOMATICAMENTE após create (2674,56 € -> 3674,55 €) sem refresh manual — confirma onChanged->refetch summary; (5) edit-payable-{id} abre diálogo pré-preenchido com supplier='TEST_UI_F2' correto, altera e persiste; (6) pay-payable-{id} muda estado para Pago e o botão desaparece (assertion count=0), KPI decresce para 2674,56 €; (7) delete-payable-{id} remove a linha e a linha desaparece do DOM; (8) payables-search filtra por fornecedor/descrição/categoria; (9) payables-filter (estados) filtrou 5 rows em 'Pago'; (10) payables-category-filter (Marketing) filtrou 2 rows; (11) payables-sort alterna 'Vencimento ↑' <-> 'Vencimento ↓'; (12) smoke: /clientes e /galerias continuam a carregar sem regressão; (13) todos os 12 data-testids esperados presentes após operações. Nenhum pageerror do produto durante o fluxo.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "PUT /api/payables/{pid}",
+        "issue": "PUT aceita status='pago' vindo do body do utilizador sem validar/setar paid_date. Se o utilizador editar e mudar manualmente para 'pago', o paid_date fica em branco (ao contrário do POST /pay que garante paid_date). Efeito prático limitado — o filtro do KPI só olha para status — mas para reports por data pode faltar data de pagamento. Considerar auto-set paid_date se status vira 'pago' via PUT."
+      },
+      {
+        "endpoint": "GET /api/clients (carry-over iter 6/7/8)",
+        "issue": "Campo password_hash='' continua a vazar em /api/clients por causa do response_model=Client. Não tocado por esta iteração."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Financeiro / Contas a Pagar",
+        "issues": ["Em Desktop os botões de ação (pay/edit/delete) só aparecem em hover (opacity-0 md:group-hover:opacity-100). Em mobile mostram sempre (opacity-100). Mesma observação do módulo Receber — coerente com o restante módulo, não é regressão nem bloqueia o fluxo."]
+      },
+      {
+        "screen": "Diálogo criar/editar",
+        "issues": ["Warning de acessibilidade (não-crítico): 'Missing Description or aria-describedby={undefined} for DialogContent' — falta de <DialogDescription/> no DialogHeader. Recomenda-se adicionar para leitores de ecrã."]
+      },
+      {
+        "screen": "Dev-only",
+        "issues": ["A app dispara um webpack-dev-server overlay por causa de aviso 'ResizeObserver loop completed with undelivered notifications' (comum com recharts). O overlay não aparece em prod build, mas em preview bloqueou pointer-events temporariamente durante testes. Não é bug de produto."]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration9_payables.py",
+    "/app/test_reports/pytest/iteration9_payables.xml",
+    "/app/test_reports/pytest/iteration9_full.xml"
+  ],
+  "action_items": [
+    "(Opcional/nice-to-have) PUT /api/payables/{pid}: se o body enviar status='pago' e paid_date estiver vazio, auto-preencher paid_date=hoje para consistência com POST /pay.",
+    "(Opcional a11y) Adicionar <DialogDescription/> no diálogo Nova/Editar conta a pagar para eliminar o warning aria-describedby.",
+    "(Carry-over iter 6/7/8) Corrigir leak de password_hash em /api/clients (excluir do response_model).",
+    "(Nice-to-have) Confirmação AlertDialog antes de eliminar (delete-payable-{id}) — ação destrutiva sem confirmação."
+  ],
+  "critical_code_review_comments": [
+    "server.py:971-984 payable_view — lógica correta: clamp amount>=0; status auto-computado apenas para status ∈ {pendente, vencido}; pago/cancelado nunca são flipados para vencido. Boa handling de due_date malformado (try/except).",
+    "server.py:1010 update_payable — whitelist explícita de campos (bom). Amount clampado tanto no create (linha 1001) como no update (1012). ✓",
+    "server.py:1020-1031 mark_payable_paid — força paid_date=hoje se não vier no body. Bom.",
+    "server.py:1504-1536 finance summary — payables agora é fonte única de despesas: payable=pendente+vencido, expenses_by_category=agrega por categoria só de pagos, profit/cashflow=receita_ano - total_paid_exp. Fórmula limpa e consistente com a migração 'expenses -> payables' documentada.",
+    "PayablesSection.jsx:47-50 load() chama onChanged() ANTES de o api.get resolver (fire-and-forget). Aceite porque o parent (Financial.jsx:218) faz o próprio refetch de /finance/summary em paralelo, e o KPI atualiza em <1s (verificado).",
+    "PayablesSection.jsx:59 openEdit — status='vencido' é mapeado para 'pendente' no formulário de edição (correto: 'vencido' é calculado, não editável). ✓",
+    "PayablesSection.jsx:83 delete sem confirmação (mesma nota do iter 7/8).",
+    "PayablesSection.jsx:135-137 sort toggle usa emoji ↑/↓ no botão — visualmente claro; podia ser um ícone lucide para consistência com o resto da app.",
+    "Financial.jsx:213-219 — 2 secções (ReceivablesSection + PayablesSection) com onChanged={refetch summary}. Ordem correta: Contas a Receber ANTES de Contas a Pagar. ✓",
+    "server.py continua ~1696 linhas — carry-over dos iters 6/7/8, refactor em routers ainda pendente."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration9_payables.py"
+  ],
+  "success_rate": {
+    "backend": "100% (19/19 novos testes iter9 + 117 regressão iters anteriores = 136 passed, 1 skipped AI-gated)",
+    "frontend": "100% (todos os fluxos do spec: create+KPI live update, edit persistência, pay+botão desaparece, delete+KPI update, search, filter estado, filter categoria, sort toggle, regressão 5 KPIs + 2 charts + receivables-section + faturas, smoke /clientes+/galerias)"
+  },
+  "test_credentials": "Sem auth para a app do fotógrafo. Sem alteração desde iter 8.",
+  "seed_data_creation": "Nenhum novo seed criado. Os testes criam+eliminam próprias contas com prefixo TEST_ e o test_zz_cleanup limpa o que sobra. Uma linha órfã 'TEST_UI_Fornecedor' de um dry-run inicial foi limpa manualmente via DELETE /api/payables/{id} no final.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Módulo Contas a Pagar validado end-to-end. Rota: /financeiro (não /financial). Backend endpoints em server.py: GET /api/payables (988-990, sort asc por due_date), GET /api/payables/categories (994-995, 16 cats), POST /api/payables (999-1005, clamp amount>=0), PUT /api/payables/{pid} (1009-1017, clamp+whitelist), POST /api/payables/{pid}/pay (1021-1031, força status=pago+paid_date), DELETE /api/payables/{pid} (1035-1037). Helper payable_view (971-984): status auto-computado apenas para pendente/vencido; pago/cancelado preservados. GET /api/finance/summary (~1504) agora lê APENAS de db.payables (a antiga collection 'expenses' foi migrada): payable KPI = pendente+vencido; expenses_by_category = agrupamento de status=='pago'; profit/cashflow usam pagos. Frontend PayablesSection.jsx renderizado no final de Financial.jsx (linha 218) por baixo de ReceivablesSection (linha 214). Todos os data-testids da spec presentes e funcionais: payables-section, payables-search, payables-filter, payables-category-filter, payables-sort, add-payable-btn, payable-supplier-input, payable-description-input, payable-category-select, payable-amount-input, payable-due-input, payable-method-select, payable-status-select, payable-notes-input, save-payable-btn, payable-row-{id}, pay-payable-{id}, edit-payable-{id}, delete-payable-{id}. Métodos válidos: Transferência, MB Way, Multibanco, Dinheiro, Cartão, Cheque. Categorias (16 exatas): Equipamentos, Marketing, Publicidade, Transporte, Combustível, Alimentação, Freelancers, Fotógrafos, Designers, Impressões, Álbuns, Fornecedores, Software, Assinaturas, Impostos, Outros. Ficheiro de testes novo: /app/backend/tests/test_iteration9_payables.py (19 testes). Regressão full backend: 136 passed + 1 skipped.",
+  "rca of the issue": "Nenhum bug de produto encontrado. Único ponto de fricção durante Playwright foi o webpack-dev-server overlay (iframe) a bloquear pointer-events depois de o recharts disparar 'ResizeObserver loop completed with undelivered notifications' — mitigado no script removendo o iframe programaticamente antes de cada interação; não afeta o build de produção."
+}

@@ -270,6 +270,39 @@ class ReceivableCreate(BaseModel):
     method: Optional[str] = ""
 
 
+PAYABLE_CATEGORIES = [
+    "Equipamentos", "Marketing", "Publicidade", "Transporte", "Combustível",
+    "Alimentação", "Freelancers", "Fotógrafos", "Designers", "Impressões",
+    "Álbuns", "Fornecedores", "Software", "Assinaturas", "Impostos", "Outros",
+]
+
+
+class Payable(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    supplier: str = ""
+    description: str = ""
+    category: str = "Outros"
+    amount: float = 0
+    due_date: Optional[str] = ""
+    paid_date: Optional[str] = ""
+    method: Optional[str] = ""
+    status: str = "pendente"
+    notes: Optional[str] = ""
+    created_at: str = Field(default_factory=now_iso)
+
+
+class PayableCreate(BaseModel):
+    supplier: str = ""
+    description: str = ""
+    category: str = "Outros"
+    amount: float = 0
+    due_date: Optional[str] = ""
+    paid_date: Optional[str] = ""
+    method: Optional[str] = ""
+    status: str = "pendente"
+    notes: Optional[str] = ""
+
+
 class Quote(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     number: str
@@ -934,6 +967,76 @@ async def delete_receivable(rid: str):
     return {"ok": True}
 
 
+# ---------------- Contas a Pagar (Payables) ----------------
+def payable_view(p: dict):
+    p["amount"] = round(max(p.get("amount", 0) or 0, 0), 2)
+    st = p.get("status", "pendente")
+    if st not in ("pago", "cancelado"):
+        due = p.get("due_date", "") or ""
+        overdue = False
+        if due:
+            try:
+                overdue = date.fromisoformat(due[:10]) < today()
+            except Exception:
+                overdue = False
+        st = "vencido" if overdue else "pendente"
+    p["status"] = st
+    return p
+
+
+@api_router.get("/payables")
+async def list_payables():
+    docs = await db.payables.find({}, {"_id": 0}).sort("due_date", 1).to_list(1000)
+    return [payable_view(d) for d in docs]
+
+
+@api_router.get("/payables/categories")
+async def payable_categories():
+    return PAYABLE_CATEGORIES
+
+
+@api_router.post("/payables")
+async def create_payable(payload: PayableCreate):
+    data = payload.model_dump()
+    data["amount"] = max(data.get("amount", 0) or 0, 0)
+    obj = Payable(**data)
+    doc = obj.model_dump()
+    await db.payables.insert_one(doc)
+    return payable_view(clean(doc))
+
+
+@api_router.put("/payables/{pid}")
+async def update_payable(pid: str, body: dict):
+    fields = {k: body[k] for k in ["supplier", "description", "category", "amount", "due_date", "paid_date", "method", "status", "notes"] if k in body}
+    if "amount" in fields:
+        fields["amount"] = max(float(fields["amount"] or 0), 0)
+    await db.payables.update_one({"id": pid}, {"$set": fields})
+    doc = await db.payables.find_one({"id": pid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Conta não encontrada")
+    return payable_view(doc)
+
+
+@api_router.post("/payables/{pid}/pay")
+async def mark_payable_paid(pid: str, body: dict = None):
+    doc = await db.payables.find_one({"id": pid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Conta não encontrada")
+    body = body or {}
+    update = {"status": "pago", "paid_date": body.get("paid_date") or now_iso()[:10]}
+    if body.get("method"):
+        update["method"] = body["method"]
+    await db.payables.update_one({"id": pid}, {"$set": update})
+    doc = await db.payables.find_one({"id": pid}, {"_id": 0})
+    return payable_view(doc)
+
+
+@api_router.delete("/payables/{pid}")
+async def delete_payable(pid: str):
+    await db.payables.delete_one({"id": pid})
+    return {"ok": True}
+
+
 # ---------------- Dashboard ----------------
 @api_router.get("/dashboard/stats")
 async def dashboard_stats():
@@ -1121,15 +1224,17 @@ async def seed():
                   status="enviado", template="servicos")
     await db.contracts.insert_many([c1.model_dump(), c2.model_dump()])
 
-    expenses = [
-        {"id": str(uuid.uuid4()), "description": "Renda do estúdio", "category": "Estúdio", "amount": 650, "status": "paga", "date": dt(-20), "created_at": now_iso()},
-        {"id": str(uuid.uuid4()), "description": "Objetiva 85mm f/1.4", "category": "Equipamento", "amount": 1200, "status": "paga", "date": dt(-40), "created_at": now_iso()},
-        {"id": str(uuid.uuid4()), "description": "Adobe Creative Cloud", "category": "Software", "amount": 60, "status": "paga", "date": dt(-5), "created_at": now_iso()},
-        {"id": str(uuid.uuid4()), "description": "Deslocações (sessões)", "category": "Transporte", "amount": 180, "status": "pendente", "date": dt(-2), "created_at": now_iso()},
-        {"id": str(uuid.uuid4()), "description": "Campanha Instagram", "category": "Marketing", "amount": 120, "status": "pendente", "date": dt(-1), "created_at": now_iso()},
-        {"id": str(uuid.uuid4()), "description": "Impressões e álbum", "category": "Fornecedores", "amount": 300, "status": "paga", "date": dt(-15), "created_at": now_iso()},
+    payables = [
+        {"id": str(uuid.uuid4()), "supplier": "Imobiliária Central", "description": "Renda do estúdio", "category": "Fornecedores", "amount": 650, "due_date": dt(-20), "paid_date": dt(-20), "method": "Transferência", "status": "pago", "notes": "", "created_at": now_iso()},
+        {"id": str(uuid.uuid4()), "supplier": "Fnac Pro", "description": "Objetiva 85mm f/1.4", "category": "Equipamentos", "amount": 1200, "due_date": dt(-40), "paid_date": dt(-40), "method": "Cartão", "status": "pago", "notes": "", "created_at": now_iso()},
+        {"id": str(uuid.uuid4()), "supplier": "Adobe", "description": "Creative Cloud (anual)", "category": "Software", "amount": 60, "due_date": dt(-5), "paid_date": dt(-5), "method": "Cartão", "status": "pago", "notes": "", "created_at": now_iso()},
+        {"id": str(uuid.uuid4()), "supplier": "Galp", "description": "Combustível (deslocações)", "category": "Combustível", "amount": 180, "due_date": dt(-2), "paid_date": "", "method": "", "status": "pendente", "notes": "Sessões fora de Lisboa", "created_at": now_iso()},
+        {"id": str(uuid.uuid4()), "supplier": "Meta Ads", "description": "Campanha Instagram", "category": "Publicidade", "amount": 120, "due_date": dt(-8), "paid_date": "", "method": "", "status": "pendente", "notes": "", "created_at": now_iso()},
+        {"id": str(uuid.uuid4()), "supplier": "Gráfica Lumina", "description": "Impressões e álbum casamento", "category": "Álbuns", "amount": 300, "due_date": dt(-15), "paid_date": dt(-15), "method": "MB Way", "status": "pago", "notes": "", "created_at": now_iso()},
+        {"id": str(uuid.uuid4()), "supplier": "Rita Design", "description": "Design de convites", "category": "Designers", "amount": 250, "due_date": dt(6), "paid_date": "", "method": "", "status": "pendente", "notes": "", "created_at": now_iso()},
+        {"id": str(uuid.uuid4()), "supplier": "Autoridade Tributária", "description": "IVA trimestral", "category": "Impostos", "amount": 890, "due_date": dt(14), "paid_date": "", "method": "", "status": "pendente", "notes": "", "created_at": now_iso()},
     ]
-    await db.expenses.insert_many(expenses)
+    await db.payables.insert_many(payables)
 
     receivables = [
         {"id": str(uuid.uuid4()), "client_name": "Ana & Rui Ferreira", "project": "Casamento Quinta dos Sonhos", "total": 3936, "received": 1500, "due_date": dt(20), "method": "Transferência", "payments": [{"amount": 1500, "method": "Transferência", "date": now_iso()}], "created_at": now_iso()},
@@ -1396,7 +1501,7 @@ async def update_settings(payload: Settings):
 @api_router.get("/finance/summary")
 async def finance_summary():
     invoices = [invoice_totals(i) for i in await db.invoices.find({}, {"_id": 0}).to_list(2000)]
-    expenses = await db.expenses.find({}, {"_id": 0}).to_list(2000)
+    payables = [payable_view(p) for p in await db.payables.find({}, {"_id": 0}).to_list(2000)]
     recv_docs = await db.receivables.find({}, {"_id": 0}).to_list(2000)
     now = datetime.now(timezone.utc)
     ym, year = now.strftime("%Y-%m"), now.strftime("%Y")
@@ -1404,11 +1509,11 @@ async def finance_summary():
     recv_open = sum(max((r.get("total", 0) or 0) - (r.get("received", 0) or 0), 0) for r in recv_docs)
     revenue_month = sum(i["total"] for i in invoices if i.get("status") == "paga" and i.get("issue_date", "").startswith(ym))
     receivable = sum(i["total"] for i in invoices if i.get("status") == "pendente") + recv_open
-    payable = sum(e.get("amount", 0) for e in expenses if e.get("status") == "pendente")
+    payable = sum(p.get("amount", 0) for p in payables if p.get("status") in ("pendente", "vencido"))
     paid_rev_year = sum(i["total"] for i in invoices if i.get("status") == "paga" and i.get("issue_date", "").startswith(year))
-    paid_exp_year = sum(e.get("amount", 0) for e in expenses if e.get("status") == "paga" and (e.get("date", "") or "").startswith(year))
+    paid_exp_year = sum(p.get("amount", 0) for p in payables if p.get("status") == "pago" and ((p.get("paid_date") or p.get("due_date") or "")).startswith(year))
     total_paid_rev = sum(i["total"] for i in invoices if i.get("status") == "paga")
-    total_paid_exp = sum(e.get("amount", 0) for e in expenses if e.get("status") == "paga")
+    total_paid_exp = sum(p.get("amount", 0) for p in payables if p.get("status") == "pago")
 
     months = {}
     for i in invoices:
@@ -1419,9 +1524,10 @@ async def finance_summary():
     revenue_chart = [{"month": k, "value": round(v, 2)} for k, v in sorted(months.items())][-6:]
 
     cats = {}
-    for e in expenses:
-        c = e.get("category", "Outros")
-        cats[c] = cats.get(c, 0) + e.get("amount", 0)
+    for p in payables:
+        if p.get("status") == "pago":
+            c = p.get("category", "Outros")
+            cats[c] = cats.get(c, 0) + p.get("amount", 0)
     expenses_by_category = [{"name": k, "value": round(v, 2)} for k, v in sorted(cats.items(), key=lambda x: -x[1])]
 
     return {

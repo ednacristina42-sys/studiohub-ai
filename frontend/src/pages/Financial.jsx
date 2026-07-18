@@ -8,6 +8,7 @@ import {
 import { api, eur, fmtDate } from "@/lib/api";
 import { useSettings } from "@/lib/settings";
 import ReceivablesSection from "./ReceivablesSection";
+import PayablesSection from "./PayablesSection";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -211,6 +212,10 @@ export default function Financial() {
 
       <div className="pt-2 border-t border-border/60">
         <ReceivablesSection onChanged={() => api.get("/finance/summary").then((r) => setSummary(r.data)).catch(() => {})} />
+      </div>
+
+      <div className="pt-2 border-t border-border/60">
+        <PayablesSection onChanged={() => api.get("/finance/summary").then((r) => setSummary(r.data)).catch(() => {})} />
       </div>
     </div>
   );

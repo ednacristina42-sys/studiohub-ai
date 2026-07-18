@@ -109,10 +109,16 @@ class Photo(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     url: str
     name: Optional[str] = ""
+    category: Optional[str] = ""
     ai_score: Optional[float] = None
     ai_tags: List[str] = []
     ai_selected: bool = False
     ai_reason: Optional[str] = ""
+    featured: bool = False
+    client_favorite: bool = False
+    client_selected: bool = False
+    approval: str = "pendente"
+    comments: List[dict] = []
 
 
 class Gallery(BaseModel):
@@ -120,9 +126,15 @@ class Gallery(BaseModel):
     title: str
     client_name: Optional[str] = ""
     project_id: Optional[str] = ""
+    session_id: Optional[str] = ""
     cover: Optional[str] = ""
     photos: List[Photo] = []
     status: str = "pendente"
+    password: Optional[str] = ""
+    access_token: Optional[str] = ""
+    link_expires: Optional[str] = ""
+    watermark: bool = False
+    categories: List[str] = []
     created_at: str = Field(default_factory=now_iso)
 
 
@@ -459,6 +471,197 @@ async def ai_select(gallery_id: str):
 
     await db.galleries.update_one({"id": gallery_id}, {"$set": {"photos": updated_photos}})
     return await db.galleries.find_one({"id": gallery_id}, {"_id": 0})
+
+
+# ---------------- Premium Gallery: settings, sharing, AI search, featured ----------------
+class GallerySettings(BaseModel):
+    password: Optional[str] = None
+    watermark: Optional[bool] = None
+    link_expires: Optional[str] = None
+    categories: Optional[List[str]] = None
+
+
+@api_router.patch("/galleries/{gallery_id}/settings", response_model=Gallery)
+async def gallery_settings(gallery_id: str, payload: GallerySettings):
+    if not await db.galleries.find_one({"id": gallery_id}):
+        raise HTTPException(404, "Galeria não encontrada")
+    upd = {k: v for k, v in payload.model_dump().items() if v is not None}
+    if upd:
+        await db.galleries.update_one({"id": gallery_id}, {"$set": upd})
+    return await db.galleries.find_one({"id": gallery_id}, {"_id": 0})
+
+
+@api_router.post("/galleries/{gallery_id}/share", response_model=Gallery)
+async def gallery_share(gallery_id: str):
+    doc = await db.galleries.find_one({"id": gallery_id})
+    if not doc:
+        raise HTTPException(404, "Galeria não encontrada")
+    token = doc.get("access_token") or uuid.uuid4().hex[:12]
+    await db.galleries.update_one({"id": gallery_id}, {"$set": {"access_token": token, "status": "partilhada"}})
+    return await db.galleries.find_one({"id": gallery_id}, {"_id": 0})
+
+
+@api_router.patch("/galleries/{gallery_id}/photos/{photo_id}/feature", response_model=Gallery)
+async def feature_photo(gallery_id: str, photo_id: str):
+    doc = await db.galleries.find_one({"id": gallery_id})
+    if not doc:
+        raise HTTPException(404, "Galeria não encontrada")
+    photos = doc.get("photos", [])
+    for p in photos:
+        if p["id"] == photo_id:
+            p["featured"] = not p.get("featured", False)
+    await db.galleries.update_one({"id": gallery_id}, {"$set": {"photos": photos}})
+    return await db.galleries.find_one({"id": gallery_id}, {"_id": 0})
+
+
+async def _ensure_analyzed(gallery_id):
+    """Analyze photos that lack ai_tags so AI search has data."""
+    doc = await db.galleries.find_one({"id": gallery_id})
+    photos = doc.get("photos", [])
+    if any(not p.get("ai_tags") for p in photos):
+        await ai_select(gallery_id)
+        doc = await db.galleries.find_one({"id": gallery_id})
+    return doc
+
+
+@api_router.post("/galleries/{gallery_id}/ai-search")
+async def gallery_ai_search(gallery_id: str, body: dict):
+    query = (body.get("query") or "").strip()
+    if not query:
+        raise HTTPException(400, "Consulta vazia")
+    doc = await _ensure_analyzed(gallery_id)
+    if not doc:
+        raise HTTPException(404, "Galeria não encontrada")
+    photos = doc.get("photos", [])
+    catalog = [{"id": p["id"], "name": p.get("name", ""), "tags": p.get("ai_tags", []), "desc": p.get("ai_reason", "")} for p in photos]
+    system = ("És um motor de pesquisa de fotografias. Recebes uma consulta em linguagem natural e uma lista de fotografias "
+              "com etiquetas e descrições. Devolves APENAS JSON: {\"ids\": [ids das fotos que correspondem]}. Sem texto extra.")
+    try:
+        chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"search-{gallery_id}-{uuid.uuid4()}", system_message=system).with_model("openai", "gpt-5.4")
+        msg = UserMessage(text=f"Consulta: {query}\n\nFotografias:\n{json.dumps(catalog, ensure_ascii=False)}")
+        resp = await chat.send_message(msg)
+        text = (resp if isinstance(resp, str) else str(resp)).replace("```json", "").replace("```", "").strip()
+        ids = json.loads(text).get("ids", [])
+    except Exception as e:
+        logging.warning(f"AI search failed: {e}")
+        ids = [p["id"] for p in photos if any(query.lower() in t.lower() for t in p.get("ai_tags", []))]
+    return {"ids": ids, "query": query}
+
+
+# ---------------- Store products ----------------
+STORE_PRODUCTS = [
+    {"id": "digital", "name": "Fotografia digital (alta resolução)", "price": 12, "type": "digital"},
+    {"id": "print-a4", "name": "Impressão A4 premium", "price": 18, "type": "impressao"},
+    {"id": "print-a3", "name": "Impressão A3 premium", "price": 28, "type": "impressao"},
+    {"id": "album", "name": "Álbum 30x30 (20 páginas)", "price": 180, "type": "album"},
+    {"id": "canvas", "name": "Quadro em tela 50x70", "price": 95, "type": "quadro"},
+    {"id": "pack10", "name": "Pack 10 fotografias digitais", "price": 90, "type": "pack"},
+]
+
+
+@api_router.get("/store/products")
+async def store_products():
+    return STORE_PRODUCTS
+
+
+# ---------------- Session -> Gallery ----------------
+@api_router.post("/sessions/{session_id}/gallery", response_model=Gallery)
+async def session_gallery(session_id: str):
+    s = await db.sessions.find_one({"id": session_id}, {"_id": 0})
+    if not s:
+        raise HTTPException(404, "Sessão não encontrada")
+    existing = await db.galleries.find_one({"session_id": session_id}, {"_id": 0})
+    if existing:
+        return existing
+    g = Gallery(title=f"{s['title']} — Galeria", client_name=s.get("client_name", ""), session_id=session_id)
+    await db.galleries.insert_one(g.model_dump())
+    return g.model_dump()
+
+
+# ---------------- Public Client Gallery ----------------
+async def _get_by_token(token):
+    doc = await db.galleries.find_one({"access_token": token}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Galeria não encontrada")
+    if doc.get("link_expires"):
+        try:
+            if doc["link_expires"] < today().isoformat():
+                raise HTTPException(410, "O link expirou")
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+    return doc
+
+
+def _watermarked(doc):
+    return doc
+
+
+@api_router.get("/public/galleries/{token}")
+async def public_gallery(token: str):
+    doc = await _get_by_token(token)
+    if doc.get("password"):
+        return {"protected": True, "title": doc["title"], "client_name": doc.get("client_name", "")}
+    return doc
+
+
+@api_router.post("/public/galleries/{token}/verify")
+async def public_gallery_verify(token: str, body: dict):
+    doc = await _get_by_token(token)
+    if doc.get("password") and body.get("password") != doc["password"]:
+        raise HTTPException(403, "Palavra-passe incorreta")
+    return doc
+
+
+async def _token_gallery_or_403(token, pin):
+    doc = await _get_by_token(token)
+    if doc.get("password") and pin != doc["password"]:
+        raise HTTPException(403, "Acesso negado")
+    return doc
+
+
+@api_router.patch("/public/galleries/{token}/photos/{photo_id}")
+async def public_photo_action(token: str, photo_id: str, body: dict):
+    doc = await _token_gallery_or_403(token, body.get("pin", ""))
+    action = body.get("action")
+    photos = doc.get("photos", [])
+    for p in photos:
+        if p["id"] == photo_id:
+            if action == "favorite":
+                p["client_favorite"] = not p.get("client_favorite", False)
+            elif action == "select":
+                p["client_selected"] = not p.get("client_selected", False)
+            elif action == "approve":
+                p["approval"] = "aprovada"
+            elif action == "reject":
+                p["approval"] = "rejeitada"
+    await db.galleries.update_one({"id": doc["id"]}, {"$set": {"photos": photos}})
+    return await db.galleries.find_one({"id": doc["id"]}, {"_id": 0})
+
+
+@api_router.post("/public/galleries/{token}/photos/{photo_id}/comment")
+async def public_photo_comment(token: str, photo_id: str, body: dict):
+    doc = await _token_gallery_or_403(token, body.get("pin", ""))
+    text = (body.get("text") or "").strip()
+    if not text:
+        raise HTTPException(400, "Comentário vazio")
+    photos = doc.get("photos", [])
+    for p in photos:
+        if p["id"] == photo_id:
+            p.setdefault("comments", []).append({"author": body.get("author", "Cliente"), "text": text, "ts": now_iso()})
+    await db.galleries.update_one({"id": doc["id"]}, {"$set": {"photos": photos}})
+    return await db.galleries.find_one({"id": doc["id"]}, {"_id": 0})
+
+
+@api_router.post("/public/galleries/{token}/order")
+async def public_order(token: str, body: dict):
+    doc = await _get_by_token(token)
+    order = {"id": str(uuid.uuid4()), "gallery_id": doc["id"], "client_name": doc.get("client_name", ""),
+             "items": body.get("items", []), "total": body.get("total", 0), "status": "recebida", "created_at": now_iso()}
+    await db.orders.insert_one(dict(order))
+    order.pop("_id", None)
+    return {"ok": True, "order": order, "mock": True}
 
 
 # ---------------- Calendar Events ----------------

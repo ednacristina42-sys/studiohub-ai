@@ -1,7 +1,8 @@
 import { useEffect, useState, useMemo } from "react";
 import { motion } from "framer-motion";
+import { useNavigate } from "react-router-dom";
 import {
-  Plus, List, LayoutGrid, CalendarDays, MapPin, Clock, Trash2, ChevronLeft, ChevronRight, Camera, User,
+  Plus, List, LayoutGrid, CalendarDays, MapPin, Clock, Trash2, ChevronLeft, ChevronRight, Camera, User, Images,
 } from "lucide-react";
 import {
   startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, format, addMonths, isSameMonth, isSameDay, parseISO,
@@ -43,9 +44,16 @@ export default function Sessions() {
   const [form, setForm] = useState(empty);
   const [month, setMonth] = useState(new Date());
   const [drag, setDrag] = useState(null);
+  const navigate = useNavigate();
 
   const load = () => api.get("/sessions").then((r) => setSessions(r.data));
   useEffect(() => { load(); api.get("/clients").then((r) => setClients(r.data)); }, []);
+
+  const createGallery = async (sid) => {
+    const r = await api.post(`/sessions/${sid}/gallery`);
+    toast.success("Galeria criada para a sessão");
+    navigate(`/galerias/${r.data.id}`);
+  };
 
   const save = async () => {
     if (!form.title.trim() || !form.date) return toast.error("Título e data são obrigatórios");
@@ -135,6 +143,7 @@ export default function Sessions() {
                     <SelectTrigger data-testid={`session-status-${s.id}`} className={`h-8 w-32 rounded-full border text-xs capitalize ${statusColor[s.status] || ""}`}><SelectValue /></SelectTrigger>
                     <SelectContent>{KANBAN.map((k) => <SelectItem key={k.key} value={k.key}>{k.label}</SelectItem>)}<SelectItem value="cancelada">Cancelada</SelectItem></SelectContent>
                   </Select>
+                  <Button variant="ghost" size="icon" data-testid={`session-gallery-${s.id}`} onClick={() => createGallery(s.id)} title="Criar galeria" className="text-muted-foreground hover:text-primary h-8 w-8"><Images className="h-4 w-4" /></Button>
                   <Button variant="ghost" size="icon" data-testid={`delete-session-${s.id}`} onClick={() => remove(s.id)} className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive h-8 w-8"><Trash2 className="h-4 w-4" /></Button>
                 </Card>
               </motion.div>

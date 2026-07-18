@@ -16,6 +16,7 @@ import Financial from "@/pages/Financial";
 import Orcamentos from "@/pages/Orcamentos";
 import Contratos from "@/pages/Contratos";
 import IA from "@/pages/IA";
+import ClientGallery from "@/pages/ClientGallery";
 import ComingSoon from "@/pages/ComingSoon";
 
 const soon = [
@@ -34,6 +35,7 @@ function App() {
         <Toaster position="top-right" richColors closeButton />
         <BrowserRouter>
           <Routes>
+            <Route path="/g/:token" element={<ClientGallery />} />
             <Route element={<Layout />}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/clientes" element={<Clients />} />

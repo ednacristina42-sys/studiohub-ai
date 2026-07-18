@@ -1,0 +1,48 @@
+{
+  "summary": "Iteration 4 (Galerias Premium + Área do Cliente) fully validated. 53/53 pytest tests passed (20 new + 33 regression from iters 1-3). All new frontend flows verified via Playwright: photographer share dialog (password/watermark/expiration/save/generate link), client portal password gate (wrong→rejected, correct→unlock), grid quick actions, lightbox with 4-action bar (favorite/select/approve/reject), cart, download-selected, session→gallery button, and regression on Dashboard, Clientes, Orçamentos, Contratos, IA.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Client comment dialog + Cart Sheet", "issues": ["Radix a11y warning: 'Missing Description or aria-describedby={undefined} for {DialogContent}'. Non-blocking; add <DialogDescription/SheetDescription> to the comment Dialog and Cart Sheet for full a11y compliance."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration4_galleries.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/iteration4_results.xml",
+    "/app/test_reports/pytest/iteration4_full.xml"
+  ],
+  "action_items": [
+    "(Low) Add DialogDescription to the client comment Dialog (ClientGallery.jsx:107) and SheetDescription/aria-describedby to the Cart Sheet (ClientGallery.jsx:132) to silence the Radix a11y warning.",
+    "(Low, cosmetic — from iter 3) ResizeObserver loop CRA-overlay suppression in index.js remains a nice-to-have."
+  ],
+  "critical_code_review_comments": [
+    "server.py has grown to 1162 lines. Split into routers/{galleries,public,quotes,contracts,invoices,ai,clients,sessions,templates}.py + models.py — overdue since iter 3.",
+    "_get_by_token (server.py:582) compares link_expires with today().isoformat() using string comparison. Works for ISO YYYY-MM-DD but silently swallows any Exception (line 592 'except Exception: pass') — malformed dates never surface a 400. Consider explicit datetime.date.fromisoformat parsing and returning 400 on bad format.",
+    "public_photo_action (server.py:624) & public_photo_comment (server.py:643) accept the password as body['pin'] over-HTTP with no rate limiting. Consider adding basic per-token throttling once auth is added — currently a client could brute-force the pin via the action endpoint bypassing the /verify counter (there is no counter yet).",
+    "session_gallery (server.py:568) returns dict directly (existing branch) but wraps in Gallery model (new branch) — inconsistent shape, though both include the same keys. Prefer always returning the raw doc for symmetry.",
+    "public_order (server.py:657) does not verify password protection — a client with the token but without the pin can place an order. If order privacy matters, gate with _token_gallery_or_403.",
+    "gallery_share (server.py:494) always sets status=partilhada, even if the gallery was previously 'entregue'. Consider preserving prior status or restricting the transition to non-terminal states.",
+    "_watermarked helper (server.py:597) is a no-op stub — watermark is done client-side only. Remove or implement server-side watermarking for downloaded images if the client should not receive raw URLs.",
+    "ai-search fallback (server.py:547) tag-substring search is fine, but returning [] silently on LlmChat exceptions may mislead the user; consider a boolean 'ai_ok:false' flag in the response.",
+    "downloadSelected in ClientGallery.jsx uses window.open-style anchor clicks — some browsers (Safari) may block > 3 sequential downloads; consider bundling as a zip in a later iteration.",
+    "Feature-toggle endpoint (feature_photo) rewrites the entire photos array — for large galleries (>500 photos) a targeted $set with positional operator would be more efficient.",
+    "All Iteration 4 interactive elements have consistent data-testid (share-btn, gallery-password-input, watermark-switch, save-settings-btn, generate-link-btn, ai-search-input/btn, filter-*, cg-filter-*, gate-pin-input/gate-submit-btn, grid-fav/select-*, lb-fav/select/approve/reject-*, cart-btn, checkout-btn, download-selected-btn, comment-input/send, session-gallery-*, lightbox / lightbox-* controls) — excellent testability."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration4_galleries.py"
+  ],
+  "success_rate": {"backend": "100% (53/53 — 20 new iter4 + 33 regression)", "frontend": "100% (photographer share/AI search UI/lightbox/compare + client portal password gate/filters/quick actions/lightbox action bar/cart/download + session→gallery + regression on all iter 1-3 pages)"},
+  "test_credentials": "N/A — no user authentication. Only per-gallery password gate. Test gallery password used during testing: 'teste123' on Campanha Vinho Reserva; test share token generated: /g/91ef275cff95 (may still be persisted in DB).",
+  "seed_data_creation": "POST /api/seed idempotent, unchanged. Iter 4 backend tests create TEST_ prefixed galleries/sessions and clean up in fixture teardown. The photographer Playwright flow modified a real seed gallery (Campanha Vinho Reserva) — set password='teste123', watermark=true, and generated an access_token. Main agent may want to re-seed (drop galleries collection) for a fresh state if desired, though the changes don't affect other flows.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iteration 4 fully passes end-to-end. Backend test file: /app/backend/tests/test_iteration4_galleries.py (20 tests, ~5s incl. real gpt-5.4 AI search call). Regression file: /app/backend/tests/backend_test.py (33 tests, ~4s). Both must be run with REACT_APP_BACKEND_URL exported. Uses module-scoped fixtures photo_gallery/public_gallery_no_password/public_gallery_password for shared state. AI search uses _ensure_analyzed which triggers ai_select if any photo lacks ai_tags (can take 10-40s for many photos). Public /g/:token route is OUTSIDE Layout — verified no sidebar. Password gate → wrong pin stays on gate, correct pin unlocks; photo action & comment endpoints re-validate pin server-side. Store returns exactly 6 products. Order endpoint returns {ok:true, mock:true} — MOCK, no Stripe. Expired link_expires returns 410. All new UI elements have data-testid. One minor a11y warning remains: missing DialogDescription on client comment Dialog and Cart Sheet (Radix Console warning only, non-functional).",
+  "rca of the issue": "No blocking issues. Everything works as specified. Minor console a11y warning ('Missing Description for DialogContent') on ClientGallery comment dialog and cart Sheet — resolvable by adding a <DialogDescription>/<SheetDescription> child inside those primitives."
+}

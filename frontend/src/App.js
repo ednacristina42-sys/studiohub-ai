@@ -1,55 +1,42 @@
 import { useEffect } from "react";
 import "@/App.css";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
-import { HOME } from "@/constants/testIds";
+import { ThemeProvider } from "next-themes";
+import { Toaster } from "sonner";
+import { api } from "@/lib/api";
+import Layout from "@/components/Layout";
+import Dashboard from "@/pages/Dashboard";
+import Clients from "@/pages/Clients";
+import Projects from "@/pages/Projects";
+import Galleries from "@/pages/Galleries";
+import GalleryDetail from "@/pages/GalleryDetail";
+import CalendarPage from "@/pages/CalendarPage";
+import Financial from "@/pages/Financial";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
-
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
-
+function App() {
   useEffect(() => {
-    helloWorldApi();
+    api.post("/seed").catch(() => {});
   }, []);
 
   return (
-    <div>
-      <header className="App-header">
-        <a
-          data-testid={HOME.emergentLink}
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
-  );
-};
-
-function App() {
-  return (
-    <div className="App">
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </div>
+    <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
+      <div className="App grain">
+        <Toaster position="top-right" richColors closeButton />
+        <BrowserRouter>
+          <Routes>
+            <Route element={<Layout />}>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/clientes" element={<Clients />} />
+              <Route path="/projetos" element={<Projects />} />
+              <Route path="/galerias" element={<Galleries />} />
+              <Route path="/galerias/:id" element={<GalleryDetail />} />
+              <Route path="/calendario" element={<CalendarPage />} />
+              <Route path="/financeiro" element={<Financial />} />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </div>
+    </ThemeProvider>
   );
 }
 

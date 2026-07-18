@@ -2,7 +2,7 @@ import os
 import requests
 import pytest
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://photo-studio-pro-31.preview.emergentagent.com').rstrip('/')
+BASE_URL = os.environ["REACT_APP_BACKEND_URL"].rstrip("/")
 
 
 @pytest.fixture(scope="session")

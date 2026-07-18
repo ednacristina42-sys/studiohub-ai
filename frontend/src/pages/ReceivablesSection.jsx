@@ -178,7 +178,7 @@ export default function ReceivablesSection({ onChanged }) {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center justify-end gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                         {r.status !== "pago" && (
                           <>
                             <Button variant="ghost" size="icon" title="Registar pagamento" data-testid={`payment-receivable-${r.id}`} onClick={() => openPay(r)} className="h-8 w-8 text-muted-foreground hover:text-amber-500"><CreditCard className="h-4 w-4" /></Button>

@@ -846,6 +846,8 @@ def receivable_view(r: dict):
     total = round(r.get("total", 0) or 0, 2)
     received = round(r.get("received", 0) or 0, 2)
     balance = round(total - received, 2)
+    if balance < 0:
+        balance = 0
     due = r.get("due_date", "") or ""
     overdue = False
     if due:

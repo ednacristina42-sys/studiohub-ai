@@ -325,12 +325,13 @@ def invoice_totals(inv: dict):
 
 
 # ---------------- Clients ----------------
-@api_router.get("/clients", response_model=List[Client])
+@api_router.get("/clients")
 async def list_clients():
-    return await db.clients.find({}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(1000)
+    docs = await db.clients.find({}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(1000)
+    return docs
 
 
-@api_router.get("/clients/{client_id}", response_model=Client)
+@api_router.get("/clients/{client_id}")
 async def get_client(client_id: str):
     doc = await db.clients.find_one({"id": client_id}, {"_id": 0, "password_hash": 0})
     if not doc:

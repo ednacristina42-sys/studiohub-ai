@@ -37,7 +37,17 @@ Plataforma SaaS moderna e premium de gestão para fotógrafos ("StudioHub AI"). 
 - Técnico: dividir server.py em routers/models; contador atómico para numeração; filtros server-side por client_id
 
 ## Next Tasks
-- Próxima fase sugerida: Financeiro avançado (despesas/lucro/fluxo de caixa/relatórios) OU Loja+Stripe+Área do Cliente com login.
+- Próxima fase sugerida: Financeiro avançado (despesas/lucro/fluxo de caixa/relatórios) OU Loja+Stripe.
+
+## Área do Cliente (Portal) — Fase 6 (2026-07-18)
+- Autenticação JWT (Bearer token em localStorage, bcrypt para hash); rota /portal isolada do app do fotógrafo
+- Login (/portal/login) com recuperação de palavra-passe (estrutura; link registado nos logs, sem email ainda)
+- Dashboard do cliente: KPIs, próxima sessão, últimas galerias, últimos documentos, ações rápidas
+- Menu lateral: Início, As minhas sessões, As minhas galerias, Contratos, Orçamentos, Faturas, Downloads (estrutura), Perfil
+- Todos os dados são scoped ao cliente autenticado (por client_name); password_hash nunca exposto
+- Perfil editável com documento fiscal e morada adaptados por i18n
+- Credenciais demo: ana.rui@email.pt / cliente123, beatriz.c@email.pt / cliente123
+- Testado 88/90 backend + 11/11 frontend (fuga de password_hash corrigida)
 
 ## i18n / Internacionalização (2026-07-18)
 - Camada global de configuração por país: GET/PUT /api/settings (company_name, country, language, locale, currency, timezone, date_format, tax_rate, tax_name, tax_label, address_labels)

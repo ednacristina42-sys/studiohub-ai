@@ -14,6 +14,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useSettings } from "@/lib/settings";
 
 const status = {
   rascunho: { label: "Rascunho", cls: "bg-zinc-500/10 text-zinc-500 border-zinc-500/20" },
@@ -31,6 +32,7 @@ export default function Orcamentos() {
   const [preview, setPreview] = useState(null);
   const [form, setForm] = useState({ client_name: "", title: "Proposta fotográfica", tax_rate: 23, valid_until: "", template: "personalizado" });
   const [items, setItems] = useState([{ description: "", quantity: 1, price: 0 }]);
+  const { settings } = useSettings();
 
   const load = () => api.get("/quotes").then((r) => setQuotes(r.data));
   useEffect(() => {
@@ -107,7 +109,7 @@ export default function Orcamentos() {
                 </div>
               </div>
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2"><Label>IVA %</Label><Input type="number" value={form.tax_rate} onChange={(e) => setForm({ ...form, tax_rate: e.target.value })} className="h-10 w-20" /></div>
+                <div className="flex items-center gap-2"><Label>{settings.tax_label || "IVA"} %</Label><Input type="number" value={form.tax_rate} onChange={(e) => setForm({ ...form, tax_rate: e.target.value })} className="h-10 w-20" /></div>
                 <p className="font-display text-xl font-medium">{eur(total())}</p>
               </div>
             </div>
@@ -161,7 +163,7 @@ export default function Orcamentos() {
                 ))}
               </div>
               <div className="flex items-center justify-between text-sm text-muted-foreground"><span>Subtotal</span><span>{eur(preview.subtotal)}</span></div>
-              <div className="flex items-center justify-between text-sm text-muted-foreground"><span>IVA ({preview.tax_rate}%)</span><span>{eur(preview.tax)}</span></div>
+              <div className="flex items-center justify-between text-sm text-muted-foreground"><span>{settings.tax_label || "IVA"} ({preview.tax_rate}%)</span><span>{eur(preview.tax)}</span></div>
               <div className="flex items-center justify-between font-display text-xl font-medium pt-2 border-t border-border"><span>Total</span><span>{eur(preview.total)}</span></div>
             </div>
           )}

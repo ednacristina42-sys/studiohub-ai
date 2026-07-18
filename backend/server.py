@@ -44,6 +44,11 @@ class Client(BaseModel):
     phone: Optional[str] = ""
     whatsapp: Optional[str] = ""
     address: Optional[str] = ""
+    tax_id: Optional[str] = ""
+    postal_code: Optional[str] = ""
+    region: Optional[str] = ""
+    city: Optional[str] = ""
+    district: Optional[str] = ""
     nif: Optional[str] = ""
     birthdate: Optional[str] = ""
     photo: Optional[str] = ""
@@ -63,6 +68,11 @@ class ClientCreate(BaseModel):
     phone: Optional[str] = ""
     whatsapp: Optional[str] = ""
     address: Optional[str] = ""
+    tax_id: Optional[str] = ""
+    postal_code: Optional[str] = ""
+    region: Optional[str] = ""
+    city: Optional[str] = ""
+    district: Optional[str] = ""
     nif: Optional[str] = ""
     birthdate: Optional[str] = ""
     photo: Optional[str] = ""
@@ -257,6 +267,23 @@ class ContractCreate(BaseModel):
 class AiChatIn(BaseModel):
     message: str
     session_id: Optional[str] = ""
+
+
+class Settings(BaseModel):
+    company_name: str = "StudioHub AI"
+    country: str = "PT"
+    language: str = "pt"
+    currency: str = "EUR"
+    locale: str = "pt-PT"
+    timezone: str = "Europe/Lisbon"
+    date_format: str = "dd/MM/yyyy"
+    tax_rate: float = 23
+    tax_name: str = "NIF"
+    tax_label: str = "IVA"
+    address_labels: dict = Field(default_factory=lambda: {"postal_code": "Código Postal", "region": "Distrito", "city": "Concelho", "district": "Freguesia"})
+
+
+DEFAULT_SETTINGS = Settings().model_dump()
 
 
 # ---------------- Helpers ----------------
@@ -1135,6 +1162,21 @@ async def ai_chat(payload: AiChatIn):
         {"session_id": session_id, "role": "assistant", "content": reply, "ts": now_iso()},
     ])
     return {"session_id": session_id, "reply": reply}
+
+
+@api_router.get("/settings")
+async def get_settings():
+    doc = await db.settings.find_one({"_key": "app"}, {"_id": 0, "_key": 0})
+    if not doc:
+        doc = dict(DEFAULT_SETTINGS)
+        await db.settings.insert_one({"_key": "app", **doc})
+    return doc
+
+
+@api_router.put("/settings")
+async def update_settings(payload: Settings):
+    await db.settings.update_one({"_key": "app"}, {"$set": payload.model_dump()}, upsert=True)
+    return payload.model_dump()
 
 
 @api_router.get("/")

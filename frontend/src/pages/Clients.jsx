@@ -15,9 +15,11 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useSettings } from "@/lib/settings";
 
 const empty = {
-  name: "", email: "", phone: "", whatsapp: "", address: "", nif: "", birthdate: "",
+  name: "", email: "", phone: "", whatsapp: "", address: "", tax_id: "",
+  postal_code: "", region: "", city: "", district: "", birthdate: "",
   client_type: "particular", status: "ativo", origin: "instagram", company: "", tags: "", notes: "",
 };
 const statusColor = {
@@ -35,6 +37,8 @@ export default function Clients() {
   const [statusFilter, setStatusFilter] = useState("todos");
   const [favOnly, setFavOnly] = useState(false);
   const navigate = useNavigate();
+  const { settings } = useSettings();
+  const al = settings.address_labels || {};
 
   const load = () => api.get("/clients").then((r) => setClients(r.data));
   useEffect(() => { load(); }, []);
@@ -90,8 +94,12 @@ export default function Clients() {
               <div><Label>Email</Label><Input data-testid="client-email-input" value={form.email} onChange={set("email")} className="h-11 mt-1.5" /></div>
               <div><Label>Telefone</Label><Input value={form.phone} onChange={set("phone")} className="h-11 mt-1.5" /></div>
               <div><Label>WhatsApp</Label><Input value={form.whatsapp} onChange={set("whatsapp")} className="h-11 mt-1.5" /></div>
-              <div><Label>NIF</Label><Input value={form.nif} onChange={set("nif")} className="h-11 mt-1.5" /></div>
+              <div><Label>{settings.tax_name || "Documento Fiscal"}</Label><Input data-testid="client-taxid-input" value={form.tax_id} onChange={set("tax_id")} className="h-11 mt-1.5" /></div>
+              <div><Label>{al.postal_code || "Código Postal"}</Label><Input value={form.postal_code} onChange={set("postal_code")} className="h-11 mt-1.5" /></div>
               <div className="col-span-2"><Label>Morada</Label><Input value={form.address} onChange={set("address")} className="h-11 mt-1.5" /></div>
+              <div><Label>{al.region || "Distrito"}</Label><Input value={form.region} onChange={set("region")} className="h-11 mt-1.5" /></div>
+              <div><Label>{al.city || "Concelho"}</Label><Input value={form.city} onChange={set("city")} className="h-11 mt-1.5" /></div>
+              <div><Label>{al.district || "Freguesia"}</Label><Input value={form.district} onChange={set("district")} className="h-11 mt-1.5" /></div>
               <div><Label>Data de nascimento</Label><Input type="date" value={form.birthdate} onChange={set("birthdate")} className="h-11 mt-1.5" /></div>
               <div><Label>Empresa</Label><Input value={form.company} onChange={set("company")} className="h-11 mt-1.5" /></div>
               <div><Label>Tipo</Label>

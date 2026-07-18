@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { useSettings } from "@/lib/settings";
 
 const sessionStatus = {
   agendada: "bg-blue-500/10 text-blue-500 border-blue-500/20",
@@ -29,6 +30,7 @@ export default function ClientDetail() {
   const [invoices, setInvoices] = useState([]);
   const [quotes, setQuotes] = useState([]);
   const [contracts, setContracts] = useState([]);
+  const { settings } = useSettings();
 
   useEffect(() => {
     api.get(`/clients/${id}`).then((r) => setClient(r.data)).catch(() => {});
@@ -56,7 +58,7 @@ export default function ClientDetail() {
     client.phone && { icon: Phone, val: client.phone },
     client.whatsapp && { icon: MessageCircle, val: client.whatsapp },
     client.address && { icon: MapPin, val: client.address },
-    client.nif && { icon: Hash, val: `NIF ${client.nif}` },
+    (client.tax_id || client.nif) && { icon: Hash, val: `${settings.tax_name || "Doc."} ${client.tax_id || client.nif}` },
     client.birthdate && { icon: Cake, val: fmtDate(client.birthdate) },
   ].filter(Boolean);
 

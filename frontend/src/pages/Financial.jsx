@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { Plus, Trash2, Receipt, Euro, Clock, CheckCircle2, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, eur, fmtDate } from "@/lib/api";
+import { useSettings } from "@/lib/settings";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +30,7 @@ export default function Financial() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ client_name: "", type: "fatura", due_date: "", tax_rate: 23 });
   const [items, setItems] = useState([{ description: "", quantity: 1, price: 0 }]);
+  const { settings } = useSettings();
 
   const load = () => api.get("/invoices").then((r) => setInvoices(r.data));
   useEffect(() => { load(); }, []);
@@ -106,7 +108,7 @@ export default function Financial() {
                 </div>
               </div>
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2"><Label>IVA %</Label><Input type="number" value={form.tax_rate} onChange={(e) => setForm({ ...form, tax_rate: e.target.value })} className="h-10 w-20" /></div>
+                <div className="flex items-center gap-2"><Label>{settings.tax_label || "IVA"} %</Label><Input type="number" value={form.tax_rate} onChange={(e) => setForm({ ...form, tax_rate: e.target.value })} className="h-10 w-20" /></div>
                 <p className="font-display text-xl font-medium">{eur(total(items, form.tax_rate))}</p>
               </div>
             </div>

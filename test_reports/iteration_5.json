@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 5 (i18n/l10n infrastructure) fully validated. 7/7 new backend tests + 33/33 regression from iters 1-4 passed. Full frontend i18n propagation confirmed via Playwright: PT default → Brasil switch (Definições) → save+reload → BR labels/currency propagate to Clients, Financial, Orçamentos → reset to PT → currency and address labels revert. Sidebar/design unchanged.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Definições preview line", "issues": ["Preview text 'Pré-visualização: 1234,50 €' uses the currently-saved module locale (from format.js). After selecting a different country in the dropdown but BEFORE clicking Guardar, the preview still shows the OLD currency (e.g. R$ after previous BR save, even when Portugal is selected in the form). Minor UX: preview does not react to unsaved form changes; it only updates after save+reload. Not a functional bug — save-then-reload flow is by design."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration5_i18n.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_iteration4_galleries.py",
+    "/app/test_reports/pytest/iteration5_results.xml",
+    "/app/test_reports/pytest/iteration5_regression.xml"
+  ],
+  "action_items": [
+    "(Optional, minor UX) Make Definições preview line reactive to the current unsaved form state (use form.currency/form.locale instead of module eur()) so the user sees the new currency immediately before saving.",
+    "(Low, carry-over from iter 4) Add DialogDescription to remaining dialogs (Financial invoice, Clients 'Novo cliente') to silence the persistent Radix a11y warning 'Missing Description or aria-describedby for DialogContent'."
+  ],
+  "critical_code_review_comments": [
+    "server.py has grown to ~1200 lines with the new Settings model + endpoints. Still overdue to split into routers/{settings,clients,quotes,contracts,invoices,galleries,ai,public}.py + models.py.",
+    "Settings model uses `dict` for address_labels without a nested Pydantic model. This works but does not validate structure: a caller could PUT {\"address_labels\": {\"foo\":\"bar\"}} and it would be persisted. Consider a nested AddressLabels(BaseModel) with 4 required fields (postal_code, region, city, district) for stronger validation.",
+    "Client model keeps both `nif` (legacy) and `tax_id` (new) with no migration/aliasing. Existing seed data has `nif` populated but `tax_id` empty; the UI now only reads `tax_id`. Consider a one-time seed data migration or a Pydantic validator that back-fills tax_id from nif when tax_id is empty, so historical clients still display a document number under the new i18n label.",
+    "SettingsProvider (lib/settings.jsx) renders null while loading. On the initial page open, this delays any UI render until the /api/settings round-trip completes (~100-400ms). Acceptable but could show a splash instead.",
+    "Definições `save` performs `window.location.reload()` after PUT — a hard reload works but loses in-flight React state. A cleaner approach is to call reload() from SettingsProvider (already implemented) and rely on components subscribing via useSettings. Current implementation double-does the work: SettingsProvider.reload() + full page reload.",
+    "format.js keeps a module-scoped `current` object. Not thread-safe in SSR (though CRA is client-only). And Definições' preview reads from `eur()` = money() = module `current` — meaning the preview line does not update as the user edits the form (only after save+reload). Consider computing the preview from form.currency+form.locale directly with Intl.NumberFormat.",
+    "COUNTRIES.BR.tax_label = 'Imposto' (generic). In practice Brazil uses ISS/ICMS/PIS/COFINS depending on service type. Preset is safe but low-fidelity. Fine for i18n infra scaffold.",
+    "GET /api/settings creates the default doc lazily inside a GET (side-effect on read). Idempotent and harmless, but semantically odd. Prefer initializing on startup or on first PUT."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration5_i18n.py"
+  ],
+  "success_rate": {"backend": "100% (7/7 new iter5 + 33/33 regression = 40/40)", "frontend": "100% (Definições i18n form, propagation to Clients/Financial/Orçamentos dialogs, currency propagation on Dashboard/Financial, PT↔BR round-trip, sidebar regression, tax_label swap IVA↔Imposto)"},
+  "test_credentials": "N/A — no auth. EMERGENT_LLM_KEY present in backend/.env.",
+  "seed_data_creation": "No new seed. Test file creates one TEST_i18n_Cliente and deletes it. Settings collection uses a single _key='app' doc. Fixture (module-scope, autouse) resets settings to PT defaults after test module completes — verified via curl /api/settings at end (country=PT, currency=EUR, tax_name=NIF, tax_label=IVA).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iteration 5 fully passes. Backend tests file: /app/backend/tests/test_iteration5_i18n.py (7 tests). Regression file: /app/backend/tests/backend_test.py (33 tests). Iter 4 gallery file: /app/backend/tests/test_iteration4_galleries.py. All run with REACT_APP_BACKEND_URL exported. Settings API is a singleton (single doc keyed by _key='app'). GET creates PT default on first call. PUT is upsert. Any test/dev flow that changes settings should RESET to PT at the end (this module does so via a module-scoped autouse fixture). Frontend Definições save triggers window.location.reload() to re-hydrate format.js module-scoped `current`. New testids confirmed: set-country, set-locale, set-currency, set-timezone, set-dateformat, set-taxname, set-taxlabel, set-taxrate, set-company, save-settings-page-btn, client-taxid-input. Client model retains both legacy `nif` and new `tax_id` — new UI uses tax_id. Seed data still populates nif only; consider back-filling tax_id in a future migration. Console still shows Radix warning 'Missing Description for DialogContent' on multiple dialogs (Financial, Clients) — non-blocking, carry-over from iter 4. Recharts 'width(-1) height(-1)' warnings appear briefly during route changes — cosmetic only.",
+  "rca of the issue": "No blocking issues. All specified iteration 5 features work end-to-end: settings persistence, country presets (PT/BR/ES/US/GB/FR/OTHER), dynamic currency (money() via Intl.NumberFormat + current.locale/currency), dynamic tax_label (IVA↔Imposto in Orçamentos/Financial dialogs), dynamic tax_name (NIF↔CPF/CNPJ label on client-taxid-input), dynamic address_labels (Distrito/Concelho/Freguesia ↔ Estado/Cidade/Bairro). Round-trip PT→BR→PT verified via both direct PUT and via Definições UI save+reload. Sidebar/menus/dashboard visually unchanged."
+}

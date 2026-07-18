@@ -1007,6 +1007,16 @@ async def seed():
                   status="enviado", template="servicos")
     await db.contracts.insert_many([c1.model_dump(), c2.model_dump()])
 
+    expenses = [
+        {"id": str(uuid.uuid4()), "description": "Renda do estúdio", "category": "Estúdio", "amount": 650, "status": "paga", "date": dt(-20), "created_at": now_iso()},
+        {"id": str(uuid.uuid4()), "description": "Objetiva 85mm f/1.4", "category": "Equipamento", "amount": 1200, "status": "paga", "date": dt(-40), "created_at": now_iso()},
+        {"id": str(uuid.uuid4()), "description": "Adobe Creative Cloud", "category": "Software", "amount": 60, "status": "paga", "date": dt(-5), "created_at": now_iso()},
+        {"id": str(uuid.uuid4()), "description": "Deslocações (sessões)", "category": "Transporte", "amount": 180, "status": "pendente", "date": dt(-2), "created_at": now_iso()},
+        {"id": str(uuid.uuid4()), "description": "Campanha Instagram", "category": "Marketing", "amount": 120, "status": "pendente", "date": dt(-1), "created_at": now_iso()},
+        {"id": str(uuid.uuid4()), "description": "Impressões e álbum", "category": "Fornecedores", "amount": 300, "status": "paga", "date": dt(-15), "created_at": now_iso()},
+    ]
+    await db.expenses.insert_many(expenses)
+
     return {"seeded": True}
 
 
@@ -1258,6 +1268,46 @@ async def get_settings():
 async def update_settings(payload: Settings):
     await db.settings.update_one({"_key": "app"}, {"$set": payload.model_dump()}, upsert=True)
     return payload.model_dump()
+
+
+@api_router.get("/finance/summary")
+async def finance_summary():
+    invoices = [invoice_totals(i) for i in await db.invoices.find({}, {"_id": 0}).to_list(2000)]
+    expenses = await db.expenses.find({}, {"_id": 0}).to_list(2000)
+    now = datetime.now(timezone.utc)
+    ym, year = now.strftime("%Y-%m"), now.strftime("%Y")
+
+    revenue_month = sum(i["total"] for i in invoices if i.get("status") == "paga" and i.get("issue_date", "").startswith(ym))
+    receivable = sum(i["total"] for i in invoices if i.get("status") == "pendente")
+    payable = sum(e.get("amount", 0) for e in expenses if e.get("status") == "pendente")
+    paid_rev_year = sum(i["total"] for i in invoices if i.get("status") == "paga" and i.get("issue_date", "").startswith(year))
+    paid_exp_year = sum(e.get("amount", 0) for e in expenses if e.get("status") == "paga" and (e.get("date", "") or "").startswith(year))
+    total_paid_rev = sum(i["total"] for i in invoices if i.get("status") == "paga")
+    total_paid_exp = sum(e.get("amount", 0) for e in expenses if e.get("status") == "paga")
+
+    months = {}
+    for i in invoices:
+        if i.get("status") == "paga":
+            m = i.get("issue_date", "")[:7]
+            if m:
+                months[m] = months.get(m, 0) + i["total"]
+    revenue_chart = [{"month": k, "value": round(v, 2)} for k, v in sorted(months.items())][-6:]
+
+    cats = {}
+    for e in expenses:
+        c = e.get("category", "Outros")
+        cats[c] = cats.get(c, 0) + e.get("amount", 0)
+    expenses_by_category = [{"name": k, "value": round(v, 2)} for k, v in sorted(cats.items(), key=lambda x: -x[1])]
+
+    return {
+        "revenue_month": round(revenue_month, 2),
+        "receivable": round(receivable, 2),
+        "payable": round(payable, 2),
+        "profit": round(paid_rev_year - paid_exp_year, 2),
+        "cashflow": round(total_paid_rev - total_paid_exp, 2),
+        "revenue_chart": revenue_chart,
+        "expenses_by_category": expenses_by_category,
+    }
 
 
 @api_router.get("/")

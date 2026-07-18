@@ -20,6 +20,13 @@ import ClientGallery from "@/pages/ClientGallery";
 import Definicoes from "@/pages/Definicoes";
 import ComingSoon from "@/pages/ComingSoon";
 import { SettingsProvider } from "@/lib/settings";
+import { PortalAuthProvider } from "@/lib/portalAuth";
+import PortalLogin from "@/pages/portal/PortalLogin";
+import PortalLayout from "@/pages/portal/PortalLayout";
+import {
+  PortalDashboard, PortalSessions, PortalGalleries, PortalContracts,
+  PortalQuotes, PortalInvoices, PortalDownloads, PortalProfile,
+} from "@/pages/portal/PortalPages";
 
 const soon = [
   { path: "/loja", title: "Loja", desc: "Venda fotografias, impressões, álbuns e produtos com checkout." },
@@ -38,6 +45,17 @@ function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/g/:token" element={<ClientGallery />} />
+            <Route path="/portal/login" element={<PortalAuthProvider><PortalLogin /></PortalAuthProvider>} />
+            <Route path="/portal" element={<PortalAuthProvider><PortalLayout /></PortalAuthProvider>}>
+              <Route index element={<PortalDashboard />} />
+              <Route path="sessoes" element={<PortalSessions />} />
+              <Route path="galerias" element={<PortalGalleries />} />
+              <Route path="contratos" element={<PortalContracts />} />
+              <Route path="orcamentos" element={<PortalQuotes />} />
+              <Route path="faturas" element={<PortalInvoices />} />
+              <Route path="downloads" element={<PortalDownloads />} />
+              <Route path="perfil" element={<PortalProfile />} />
+            </Route>
             <Route element={<Layout />}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/clientes" element={<Clients />} />

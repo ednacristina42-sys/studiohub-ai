@@ -1,11 +1,14 @@
-from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import json
 import base64
+import secrets
 import logging
+import bcrypt
+import jwt as pyjwt
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional
@@ -23,6 +26,25 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
+JWT_SECRET = os.environ.get('JWT_SECRET', 'dev-secret')
+JWT_ALG = "HS256"
+
+
+def hash_password(pw: str) -> str:
+    return bcrypt.hashpw(pw.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def verify_password(pw: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(pw.encode("utf-8"), hashed.encode("utf-8"))
+    except Exception:
+        return False
+
+
+def create_client_token(client_id: str, email: str) -> str:
+    payload = {"sub": client_id, "email": email, "role": "client",
+               "exp": datetime.now(timezone.utc) + timedelta(days=7)}
+    return pyjwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
 
 app = FastAPI(title="StudioHub AI")
 api_router = APIRouter(prefix="/api")
@@ -59,6 +81,7 @@ class Client(BaseModel):
     tags: List[str] = []
     notes: Optional[str] = ""
     favorite: bool = False
+    password_hash: Optional[str] = ""
     created_at: str = Field(default_factory=now_iso)
 
 
@@ -304,12 +327,12 @@ def invoice_totals(inv: dict):
 # ---------------- Clients ----------------
 @api_router.get("/clients", response_model=List[Client])
 async def list_clients():
-    return await db.clients.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return await db.clients.find({}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(1000)
 
 
 @api_router.get("/clients/{client_id}", response_model=Client)
 async def get_client(client_id: str):
-    doc = await db.clients.find_one({"id": client_id}, {"_id": 0})
+    doc = await db.clients.find_one({"id": client_id}, {"_id": 0, "password_hash": 0})
     if not doc:
         raise HTTPException(404, "Cliente não encontrado")
     return doc
@@ -865,6 +888,9 @@ async def seed():
     clients = [Client(**c) for c in clients_data]
     await db.clients.insert_many([c.model_dump() for c in clients])
     cmap = {c.name: c.id for c in clients}
+    # Portal test credentials
+    await db.clients.update_one({"email": "ana.rui@email.pt"}, {"$set": {"password_hash": hash_password("cliente123")}})
+    await db.clients.update_one({"email": "beatriz.c@email.pt"}, {"$set": {"password_hash": hash_password("cliente123")}})
 
     def dt(offset):
         return (today() + timedelta(days=offset)).isoformat()
@@ -1182,6 +1208,136 @@ async def update_settings(payload: Settings):
 @api_router.get("/")
 async def root():
     return {"message": "StudioHub AI API"}
+
+
+# ================= CLIENT PORTAL (Área do Cliente) =================
+class PortalLogin(BaseModel):
+    email: str
+    password: str
+
+
+class PortalForgot(BaseModel):
+    email: str
+
+
+class PortalProfile(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    tax_id: Optional[str] = None
+    address: Optional[str] = None
+    postal_code: Optional[str] = None
+    city: Optional[str] = None
+    region: Optional[str] = None
+
+
+def _public_client(doc: dict) -> dict:
+    doc = dict(doc)
+    doc.pop("_id", None)
+    doc.pop("password_hash", None)
+    return doc
+
+
+async def get_current_client(authorization: Optional[str] = Header(None)) -> dict:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Não autenticado")
+    token = authorization[7:]
+    try:
+        payload = pyjwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
+    except pyjwt.ExpiredSignatureError:
+        raise HTTPException(401, "Sessão expirada")
+    except pyjwt.InvalidTokenError:
+        raise HTTPException(401, "Token inválido")
+    client = await db.clients.find_one({"id": payload.get("sub")})
+    if not client:
+        raise HTTPException(401, "Cliente não encontrado")
+    return client
+
+
+@api_router.post("/portal/auth/login")
+async def portal_login(payload: PortalLogin):
+    email = payload.email.strip().lower()
+    client = await db.clients.find_one({"email": {"$regex": f"^{email}$", "$options": "i"}})
+    if not client or not client.get("password_hash") or not verify_password(payload.password, client["password_hash"]):
+        raise HTTPException(401, "Email ou palavra-passe incorretos")
+    token = create_client_token(client["id"], client.get("email", ""))
+    return {"token": token, "client": _public_client(client)}
+
+
+@api_router.get("/portal/auth/me")
+async def portal_me(client: dict = Depends(get_current_client)):
+    return _public_client(client)
+
+
+@api_router.post("/portal/auth/forgot-password")
+async def portal_forgot(payload: PortalForgot):
+    email = payload.email.strip().lower()
+    client = await db.clients.find_one({"email": {"$regex": f"^{email}$", "$options": "i"}})
+    if client:
+        token = secrets.token_urlsafe(32)
+        await db.password_reset_tokens.insert_one({
+            "client_id": client["id"], "token": token, "used": False,
+            "expires_at": datetime.now(timezone.utc) + timedelta(hours=1)})
+        logging.info(f"[PORTAL RESET] Link para {email}: /portal/reset?token={token}")
+    return {"ok": True, "message": "Se o email existir, enviámos instruções de recuperação."}
+
+
+@api_router.get("/portal/dashboard")
+async def portal_dashboard(client: dict = Depends(get_current_client)):
+    name = client.get("name", "")
+    sessions = await db.sessions.find({"client_name": name}, {"_id": 0}).sort("date", 1).to_list(200)
+    galleries = await db.galleries.find({"client_name": name}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    contracts = await db.contracts.find({"client_name": name}, {"_id": 0}).sort("created_at", -1).to_list(50)
+    invoices = [invoice_totals(i) for i in await db.invoices.find({"client_name": name}, {"_id": 0}).to_list(200)]
+    td = today().isoformat()
+    upcoming = [s for s in sessions if s.get("date", "") >= td]
+    pending = sum(i["total"] for i in invoices if i.get("status") == "pendente")
+    paid = sum(i["total"] for i in invoices if i.get("status") == "paga")
+    return {
+        "client": _public_client(client),
+        "next_session": upcoming[0] if upcoming else None,
+        "galleries": galleries[:4],
+        "documents": contracts[:4],
+        "pending_payments": round(pending, 2),
+        "paid_total": round(paid, 2),
+        "counts": {"sessions": len(sessions), "galleries": len(galleries), "invoices": len(invoices)},
+    }
+
+
+@api_router.get("/portal/sessions")
+async def portal_sessions(client: dict = Depends(get_current_client)):
+    return await db.sessions.find({"client_name": client.get("name", "")}, {"_id": 0}).sort("date", -1).to_list(500)
+
+
+@api_router.get("/portal/galleries")
+async def portal_galleries(client: dict = Depends(get_current_client)):
+    return await db.galleries.find({"client_name": client.get("name", "")}, {"_id": 0}).sort("created_at", -1).to_list(500)
+
+
+@api_router.get("/portal/contracts")
+async def portal_contracts(client: dict = Depends(get_current_client)):
+    return await db.contracts.find({"client_name": client.get("name", "")}, {"_id": 0}).sort("created_at", -1).to_list(500)
+
+
+@api_router.get("/portal/quotes")
+async def portal_quotes(client: dict = Depends(get_current_client)):
+    docs = await db.quotes.find({"client_name": client.get("name", "")}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return [invoice_totals(d) for d in docs]
+
+
+@api_router.get("/portal/invoices")
+async def portal_invoices(client: dict = Depends(get_current_client)):
+    docs = await db.invoices.find({"client_name": client.get("name", "")}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return [invoice_totals(d) for d in docs]
+
+
+@api_router.put("/portal/profile")
+async def portal_profile(payload: PortalProfile, client: dict = Depends(get_current_client)):
+    upd = {k: v for k, v in payload.model_dump().items() if v is not None}
+    if upd:
+        await db.clients.update_one({"id": client["id"]}, {"$set": upd})
+    doc = await db.clients.find_one({"id": client["id"]})
+    return _public_client(doc)
 
 
 app.include_router(api_router)

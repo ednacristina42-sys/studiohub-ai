@@ -1,0 +1,51 @@
+{
+  "summary": "Iteration 6 (Client Portal MVP) validated end-to-end. Backend: 28/30 new portal tests pass + 60/60 regression from iters 1-5 pass = 88/90 overall. Frontend (Playwright): 11/11 flows pass — protected route redirect, wrong-cred error toast, forgot-password mode toggle+success toast, valid login+token persistence+greeting 'Olá, Ana', KPIs (Sessões/Galerias/Por pagar/Pago), quick actions (pquick-*), full sidebar navigation across all 8 tabs, Sessions list with 'Ver detalhes', Galleries with 'Abrir', Profile shows PT fiscal label 'NIF' (i18n) and Concelho/Distrito, profile save persists, logout clears token and returns to login, photographer app main sidebar still renders unchanged.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/clients and GET /api/clients/{id}",
+        "issue": "Response includes the field name 'password_hash' as an empty string ('') for every client. The MongoDB projection correctly excludes the actual hash value, but because `Client` Pydantic model has `password_hash: Optional[str] = ''` and is used as `response_model=Client`, FastAPI re-materialises the field with its default empty string in the JSON response. Spec (Fase 6) requires 'password_hash never returned in any /api/clients response'. Recommended fix: either (a) remove `password_hash` from the `Client` response model (keep it only on a separate internal DB model / dict), or (b) add `response_model_exclude={'password_hash'}` to the two @api_router.get endpoints, or (c) return `_public_client(doc)` (same helper already used by portal endpoints) instead of relying on projection + response_model."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration6_portal.py",
+    "/app/test_reports/pytest/iteration6_portal.xml",
+    "/app/test_reports/pytest/iteration6_full.xml"
+  ],
+  "action_items": [
+    "Fix password_hash leak in /api/clients list + detail (see backend_issues.minor). Value is always empty string so no actual hash exposed, but the field name shows up in responses which violates the Fase 6 spec ('password_hash never returned in any /api/clients response'). Suggested one-liner: return `_public_client(doc)` (already defined at server.py:1234) for both endpoints and drop `response_model=Client`, or remove password_hash from the Client Pydantic model.",
+    "(Carry-over from iter 5) Split server.py (~1360 lines) into routers/ (portal, clients, quotes, contracts, invoices, galleries, ai, public, settings) + models.py."
+  ],
+  "critical_code_review_comments": [
+    "server.py:84 — `Client` Pydantic model still declares `password_hash: Optional[str] = ''`. This is BOTH the DB representation AND the response_model for /api/clients. Because of that, the field always leaks into API responses as an empty string. Better pattern: keep password_hash only on the DB doc (raw dict) and define a separate `ClientPublic` response model without password_hash. The portal helper `_public_client()` already exists and does exactly this pop — use it for /api/clients too.",
+    "server.py:1241 `get_current_client` — the Bearer token dependency is fine (matches playbook fallback pattern). Consider caching the client lookup or moving to a small `get_current_client_cached` if latency becomes an issue; currently every portal request does one extra Mongo find_one.",
+    "server.py:1258 portal_login — uses a case-insensitive regex to match email. Regex is built from user input (`payload.email`) with `$regex: f'^{email}$'`. If the email contains regex metacharacters (e.g. `.` or `+`), the match still works (dots and pluses are harmless), but a malicious email with `.*` could theoretically match multiple docs. Recommend `re.escape(email)` or just do `{'email': email}` with a case-insensitive collation, or store emails already lowercased and do exact match on the pre-lowercased value.",
+    "server.py:1257 login — no rate-limiting / brute-force protection. Spec doesn't require it for Fase 6 MVP, but is a known gap for future hardening.",
+    "server.py:1272 forgot-password — stores reset tokens in `db.password_reset_tokens` but no endpoint exists yet to consume them (POST /reset). Mocked as spec allows (logs to console). Documented, not a bug.",
+    "portalAuth.jsx:22 — on token-in-storage but /me returns 401 (expired/invalid), the code removes the token but leaves `client=null` and `ready=true`; PortalLayout then correctly redirects to /portal/login. Good.",
+    "PortalPages.jsx PortalProfile — uses `form.tax_id || form.nif` as the initial value for the tax input, gracefully bridging the legacy `nif` field and the new i18n `tax_id`. Nice touch; consistent with the Clients page workaround from iter 5.",
+    "PortalPages.jsx PortalDashboard uses `eur()` from lib/api for both KPI values. This will follow the same i18n-currency behavior as the photographer app (currency comes from Definições). Verified: 'Por pagar 3936,00 €' rendered in PT default.",
+    "App.js — PortalAuthProvider is wrapped around each /portal route separately (line 48 vs 49). This means the /portal/login route uses a DIFFERENT PortalAuthProvider instance than the /portal/* routes. Practical effect: after login on /portal/login, the token is persisted to localStorage but the /portal PortalAuthProvider instance re-reads it on mount and calls /me. This works but adds an extra round-trip on every login→dashboard transition (visible in DevTools). Consider lifting a single PortalAuthProvider above both Routes, or making the /portal/login route a child of the /portal layout with its own bypass logic.",
+    "SettingsProvider wraps the entire app INCLUDING /portal/login. Portal login therefore blocks on the /api/settings GET before rendering. Minor: portal login could technically render without settings. Not blocking."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration6_portal.py"
+  ],
+  "success_rate": {
+    "backend": "97.8% (28/30 iter6 portal — 2 pre-existing password_hash field-name leak minor findings; 60/60 regression iter1-5) — overall 88/90 = 97.8%",
+    "frontend": "100% (11/11 portal flows via Playwright: protected route, wrong creds, forgot-password toggle+toast, valid login+greeting, KPIs+quick actions, 8-tab sidebar nav, sessions list, galleries list, profile PT NIF label + save, logout, photographer app regression)"
+  },
+  "test_credentials": "ana.rui@email.pt / cliente123 and beatriz.c@email.pt / cliente123. Both work. Password hashes are seeded via server.py seed_data() lines 892-893 (bcrypt via passlib) so JWT auth works out of the box after the /api/seed idempotent call in App.js.",
+  "seed_data_creation": "None new. Existing /api/seed sets password_hash on the two demo clients. Tests do not create/destroy clients or portal accounts — only mutate ana's phone temporarily and restore it.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Fase 6 client portal validated. New backend test file: /app/backend/tests/test_iteration6_portal.py (30 tests). Full regression file list: backend_test.py (33), test_iteration4_galleries.py (17), test_iteration5_i18n.py (7), test_iteration6_portal.py (30) = 87 expected, current 88/90 pass. The only remaining failures are the 2 password_hash field-leak tests in TestPasswordHashLeak — these are correctly flagging a real (minor) spec violation on /api/clients and /api/clients/{id}. Fix them by returning _public_client(doc) instead of relying on response_model=Client. Auth is JWT Bearer (PyJWT) in Authorization header, tokens stored in localStorage key 'portal_token'. JWT_SECRET is in backend/.env. Scoping is by client_name string match — case-sensitive. Portal routes: /portal, /portal/login, /portal/sessoes, /portal/galerias, /portal/contratos, /portal/orcamentos, /portal/faturas, /portal/downloads, /portal/perfil. Test IDs all match the spec: portal-email, portal-password, portal-login-btn, portal-forgot-link, portal-recover-email, portal-recover-btn, portal-logout-btn, pnav-{home,sessions,galleries,contracts,quotes,invoices,downloads,profile}, pquick-{galerias,sessoes,faturas}, psession-{id}, psession-view-{id}, pgallery-{id}, pgallery-open-{id}, pprofile-{name,email,phone,taxid,address,save}, pcontract-{id}, pquote-{id}, pinvoice-{id}. Photographer app dashboard/menu untouched (verified in Playwright test 11).",
+  "rca of the issue": "password_hash leak RCA: server.py Client Pydantic model (line 84) declares password_hash as a serializable field with default ''. The two GET /api/clients endpoints use response_model=Client so FastAPI serialises the Pydantic model — filling missing fields (password_hash was projected out by Mongo) with their default value. Reproduction: `curl {BASE}/api/clients | jq '.[0].password_hash'` returns `\"\"`. Mitigation: change return statement to `return [_public_client(d) for d in await db.clients.find(...).to_list(1000)]` and drop `response_model=Client` (or add response_model_exclude={'password_hash'}). Portal endpoints already do this correctly."
+}

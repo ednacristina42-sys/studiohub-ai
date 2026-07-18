@@ -13,7 +13,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 
 import httpx
 from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
@@ -247,6 +247,27 @@ class InvoiceCreate(BaseModel):
     items: List[InvoiceItem] = []
     tax_rate: float = 23
     notes: Optional[str] = ""
+
+
+class Receivable(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    client_name: str
+    project: Optional[str] = ""
+    total: float = 0
+    received: float = 0
+    due_date: Optional[str] = ""
+    method: Optional[str] = ""
+    payments: List[dict] = []
+    created_at: str = Field(default_factory=now_iso)
+
+
+class ReceivableCreate(BaseModel):
+    client_name: str
+    project: Optional[str] = ""
+    total: float = 0
+    received: float = 0
+    due_date: Optional[str] = ""
+    method: Optional[str] = ""
 
 
 class Quote(BaseModel):
@@ -820,6 +841,97 @@ async def delete_invoice(invoice_id: str):
     return {"ok": True}
 
 
+# ---------------- Contas a Receber (Receivables) ----------------
+def receivable_view(r: dict):
+    total = round(r.get("total", 0) or 0, 2)
+    received = round(r.get("received", 0) or 0, 2)
+    balance = round(total - received, 2)
+    due = r.get("due_date", "") or ""
+    overdue = False
+    if due:
+        try:
+            overdue = date.fromisoformat(due[:10]) < today()
+        except Exception:
+            overdue = False
+    if total > 0 and received >= total:
+        status = "pago"
+    elif received > 0:
+        status = "parcial"
+    elif overdue:
+        status = "vencido"
+    else:
+        status = "pendente"
+    r["balance"] = balance
+    r["status"] = status
+    return r
+
+
+@api_router.get("/receivables")
+async def list_receivables():
+    docs = await db.receivables.find({}, {"_id": 0}).sort("due_date", 1).to_list(1000)
+    return [receivable_view(d) for d in docs]
+
+
+@api_router.post("/receivables")
+async def create_receivable(payload: ReceivableCreate):
+    obj = Receivable(**payload.model_dump())
+    doc = obj.model_dump()
+    await db.receivables.insert_one(doc)
+    return receivable_view(clean(doc))
+
+
+@api_router.put("/receivables/{rid}")
+async def update_receivable(rid: str, body: dict):
+    fields = {k: body[k] for k in ["client_name", "project", "total", "received", "due_date", "method"] if k in body}
+    await db.receivables.update_one({"id": rid}, {"$set": fields})
+    doc = await db.receivables.find_one({"id": rid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Conta não encontrada")
+    return receivable_view(doc)
+
+
+@api_router.post("/receivables/{rid}/payment")
+async def register_payment(rid: str, body: dict):
+    doc = await db.receivables.find_one({"id": rid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Conta não encontrada")
+    amount = round(float(body.get("amount", 0) or 0), 2)
+    if amount <= 0:
+        raise HTTPException(400, "Valor inválido")
+    method = body.get("method", doc.get("method", "")) or ""
+    received = round((doc.get("received", 0) or 0) + amount, 2)
+    total = doc.get("total", 0) or 0
+    if received > total:
+        received = total
+    payment = {"amount": amount, "method": method, "date": now_iso()}
+    await db.receivables.update_one({"id": rid}, {"$set": {"received": received, "method": method}, "$push": {"payments": payment}})
+    doc = await db.receivables.find_one({"id": rid}, {"_id": 0})
+    return receivable_view(doc)
+
+
+@api_router.post("/receivables/{rid}/pay")
+async def mark_receivable_paid(rid: str, body: dict = None):
+    doc = await db.receivables.find_one({"id": rid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Conta não encontrada")
+    total = doc.get("total", 0) or 0
+    prev = doc.get("received", 0) or 0
+    balance = round(total - prev, 2)
+    method = (body or {}).get("method", doc.get("method", "")) or ""
+    update = {"$set": {"received": total, "method": method}}
+    if balance > 0:
+        update["$push"] = {"payments": {"amount": balance, "method": method, "date": now_iso()}}
+    await db.receivables.update_one({"id": rid}, update)
+    doc = await db.receivables.find_one({"id": rid}, {"_id": 0})
+    return receivable_view(doc)
+
+
+@api_router.delete("/receivables/{rid}")
+async def delete_receivable(rid: str):
+    await db.receivables.delete_one({"id": rid})
+    return {"ok": True}
+
+
 # ---------------- Dashboard ----------------
 @api_router.get("/dashboard/stats")
 async def dashboard_stats():
@@ -1016,6 +1128,15 @@ async def seed():
         {"id": str(uuid.uuid4()), "description": "Impressões e álbum", "category": "Fornecedores", "amount": 300, "status": "paga", "date": dt(-15), "created_at": now_iso()},
     ]
     await db.expenses.insert_many(expenses)
+
+    receivables = [
+        {"id": str(uuid.uuid4()), "client_name": "Ana & Rui Ferreira", "project": "Casamento Quinta dos Sonhos", "total": 3936, "received": 1500, "due_date": dt(20), "method": "Transferência", "payments": [{"amount": 1500, "method": "Transferência", "date": now_iso()}], "created_at": now_iso()},
+        {"id": str(uuid.uuid4()), "client_name": "Studio Belle Mode", "project": "Editorial Primavera 2026", "total": 2214, "received": 0, "due_date": dt(12), "method": "", "payments": [], "created_at": now_iso()},
+        {"id": str(uuid.uuid4()), "client_name": "Marca Vinha do Sol", "project": "Campanha Vinho Reserva", "total": 2952, "received": 2952, "due_date": dt(-15), "method": "MB Way", "payments": [{"amount": 2952, "method": "MB Way", "date": now_iso()}], "created_at": now_iso()},
+        {"id": str(uuid.uuid4()), "client_name": "Beatriz Costa", "project": "Retrato Corporativo", "total": 553.5, "received": 0, "due_date": dt(-6), "method": "", "payments": [], "created_at": now_iso()},
+        {"id": str(uuid.uuid4()), "client_name": "João Marques", "project": "Batizado do Tomás", "total": 738, "received": 300, "due_date": dt(-3), "method": "Dinheiro", "payments": [{"amount": 300, "method": "Dinheiro", "date": now_iso()}], "created_at": now_iso()},
+    ]
+    await db.receivables.insert_many(receivables)
 
     return {"seeded": True}
 
@@ -1274,11 +1395,13 @@ async def update_settings(payload: Settings):
 async def finance_summary():
     invoices = [invoice_totals(i) for i in await db.invoices.find({}, {"_id": 0}).to_list(2000)]
     expenses = await db.expenses.find({}, {"_id": 0}).to_list(2000)
+    recv_docs = await db.receivables.find({}, {"_id": 0}).to_list(2000)
     now = datetime.now(timezone.utc)
     ym, year = now.strftime("%Y-%m"), now.strftime("%Y")
 
+    recv_open = sum(max((r.get("total", 0) or 0) - (r.get("received", 0) or 0), 0) for r in recv_docs)
     revenue_month = sum(i["total"] for i in invoices if i.get("status") == "paga" and i.get("issue_date", "").startswith(ym))
-    receivable = sum(i["total"] for i in invoices if i.get("status") == "pendente")
+    receivable = sum(i["total"] for i in invoices if i.get("status") == "pendente") + recv_open
     payable = sum(e.get("amount", 0) for e in expenses if e.get("status") == "pendente")
     paid_rev_year = sum(i["total"] for i in invoices if i.get("status") == "paga" and i.get("issue_date", "").startswith(year))
     paid_exp_year = sum(e.get("amount", 0) for e in expenses if e.get("status") == "paga" and (e.get("date", "") or "").startswith(year))

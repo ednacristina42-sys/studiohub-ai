@@ -1,9 +1,13 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Plus, Trash2, Receipt, Euro, Clock, CheckCircle2, X } from "lucide-react";
+import { Plus, Trash2, Receipt, Euro, Clock, CheckCircle2, X, Wallet, ArrowDownCircle, TrendingUp, Landmark } from "lucide-react";
 import { toast } from "sonner";
+import {
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell, Legend,
+} from "recharts";
 import { api, eur, fmtDate } from "@/lib/api";
 import { useSettings } from "@/lib/settings";
+import ReceivablesSection from "./ReceivablesSection";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,14 +29,21 @@ const statusMap = {
   cancelada: { label: "Cancelada", cls: "bg-rose-500/10 text-rose-500 border-rose-500/20", icon: X },
 };
 
+const COLORS = ["hsl(var(--chart-1))", "hsl(var(--chart-2))", "hsl(var(--chart-3))", "hsl(var(--chart-4))", "hsl(var(--chart-5))"];
+const tip = { background: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: 12, fontSize: 13 };
+
 export default function Financial() {
   const [invoices, setInvoices] = useState([]);
+  const [summary, setSummary] = useState(null);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ client_name: "", type: "fatura", due_date: "", tax_rate: 23 });
   const [items, setItems] = useState([{ description: "", quantity: 1, price: 0 }]);
   const { settings } = useSettings();
 
-  const load = () => api.get("/invoices").then((r) => setInvoices(r.data));
+  const load = () => {
+    api.get("/invoices").then((r) => setInvoices(r.data));
+    api.get("/finance/summary").then((r) => setSummary(r.data)).catch(() => {});
+  };
   useEffect(() => { load(); }, []);
 
   const total = (its, tax) => {
@@ -52,26 +63,70 @@ export default function Financial() {
   const setStatus = async (id, status) => { await api.put(`/invoices/${id}/status`, { status }); toast.success("Estado atualizado"); load(); };
   const remove = async (id) => { await api.delete(`/invoices/${id}`); toast.success("Fatura removida"); load(); };
 
-  const paid = invoices.filter((i) => i.status === "paga").reduce((s, i) => s + i.total, 0);
-  const pending = invoices.filter((i) => i.status === "pendente").reduce((s, i) => s + i.total, 0);
-
   const updateItem = (idx, key, val) => setItems(items.map((it, i) => i === idx ? { ...it, [key]: val } : it));
+
+  const kpis = [
+    { key: "revenue_month", label: "Receita do mês", value: summary ? eur(summary.revenue_month) : "—", icon: Euro, cls: "text-emerald-500" },
+    { key: "receivable", label: "Contas a receber", value: summary ? eur(summary.receivable) : "—", icon: Clock, cls: "text-amber-500" },
+    { key: "payable", label: "Contas a pagar", value: summary ? eur(summary.payable) : "—", icon: ArrowDownCircle, cls: "text-rose-500" },
+    { key: "profit", label: "Lucro", value: summary ? eur(summary.profit) : "—", icon: TrendingUp, cls: "text-primary" },
+    { key: "cashflow", label: "Fluxo de caixa", value: summary ? eur(summary.cashflow) : "—", icon: Wallet, cls: "text-sky-500" },
+  ];
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {[
-          { label: "Recebido", value: eur(paid), icon: Euro, cls: "text-emerald-500" },
-          { label: "Pendente", value: eur(pending), icon: Clock, cls: "text-amber-500" },
-          { label: "Faturas", value: invoices.length, icon: Receipt, cls: "text-primary" },
-        ].map((s, i) => (
-          <motion.div key={s.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
-            <Card className="p-6 border-border flex items-center justify-between">
-              <div><p className="text-sm text-muted-foreground">{s.label}</p><p className="font-display text-2xl font-medium mt-1">{s.value}</p></div>
-              <s.icon className={`h-6 w-6 ${s.cls}`} />
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        {kpis.map((s, i) => (
+          <motion.div key={s.key} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
+            <Card data-testid={`kpi-${s.key}`} className="p-5 border-border flex items-center justify-between h-full">
+              <div>
+                <p className="text-xs text-muted-foreground">{s.label}</p>
+                <p className="font-display text-xl font-medium mt-1">{s.value}</p>
+              </div>
+              <s.icon className={`h-5 w-5 shrink-0 ${s.cls}`} />
             </Card>
           </motion.div>
         ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card data-testid="revenue-chart" className="p-6 border-border">
+          <h3 className="font-display text-lg font-medium mb-4">Receita mensal</h3>
+          <div className="h-64" style={{ minHeight: 256 }}>
+            {!summary || summary.revenue_chart.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-sm text-muted-foreground">Sem dados</div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={summary.revenue_chart}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                  <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} />
+                  <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} />
+                  <Tooltip contentStyle={tip} formatter={(v) => [eur(v), "Receita"]} cursor={{ fill: "hsl(var(--muted) / 0.3)" }} />
+                  <Bar dataKey="value" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} maxBarSize={40} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </Card>
+
+        <Card data-testid="expenses-chart" className="p-6 border-border">
+          <h3 className="font-display text-lg font-medium mb-4">Despesas por categoria</h3>
+          <div className="h-64" style={{ minHeight: 256 }}>
+            {!summary || summary.expenses_by_category.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-sm text-muted-foreground">Sem dados</div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={summary.expenses_by_category} dataKey="value" nameKey="name" innerRadius={55} outerRadius={85} paddingAngle={3}>
+                    {summary.expenses_by_category.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip contentStyle={tip} formatter={(v) => eur(v)} />
+                  <Legend formatter={(v) => <span className="text-xs capitalize text-muted-foreground">{v}</span>} />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </Card>
       </div>
 
       <div className="flex items-center justify-between">
@@ -153,6 +208,10 @@ export default function Financial() {
           </Table>
         </Card>
       )}
+
+      <div className="pt-2 border-t border-border/60">
+        <ReceivablesSection onChanged={() => api.get("/finance/summary").then((r) => setSummary(r.data)).catch(() => {})} />
+      </div>
     </div>
   );
 }

@@ -1,0 +1,61 @@
+{
+  "summary": "Iteration 8 — Módulo 'Contas a Receber' dentro de /financeiro validado end-to-end. IMPORTANTE: a rota é /financeiro (PT), não /financial (o problem statement mencionava /financial mas a app usa /financeiro conforme App.js linha 67). Backend: 13/13 novos testes de receivables passam (list, sort asc por vencimento, CREATE pendente/vencido, UPDATE persistência, POST /payment (parcial->status Parcial), 400 para amount<=0, POST /pay (Pago com push de payment do saldo remanescente), pagamento excedente é capped ao total, DELETE, e integração com GET /finance/summary onde recv_open é somado ao KPI receivable). Regressão completa: 117 passed + 1 skipped (AI gated) em toda a suite backend — zero regressões. Frontend (Playwright): 12/12 flows passam — (1) /financeiro carrega com 5 KPIs [kpi-revenue_month/receivable/payable/profit/cashflow] e 2 charts [revenue-chart/expenses-chart]; (2) receivables-section aparece por baixo da tabela de faturas com colunas Cliente/Sessão/Total/Recebido/Saldo/Vencimento/Método/Estado; (3) search filtra por cliente/projeto; (4) filter por estado (Todos/Pendente/Parcial/Pago/Vencido) funciona (filtrou 3 rows Pago); (5) sort toggle Vencimento ↑ <-> ↓ funciona; (6) add-receivable-btn abre diálogo, receivable-client-select popula com clientes reais (João Marques selecionado), receivable-project-input/total-input/due-input aceitam input, receivable-method-select mostra MB Way/Multibanco/Transferência/Dinheiro/Cartão/Cheque, save-receivable-btn cria e a linha aparece (5->6 rows); (7) partial payment via payment-receivable-{id} + payment-amount-input=500 + Transferência + save-payment-btn: status muda de Pendente->Parcial; (8) KPI kpi-receivable atualiza SEM refresh manual (9139,50 € -> 10 139,50 € após criar); (9) pay-receivable-{id} marca como Pago (Recebido=Total, Saldo=0); (10) edit-receivable-{id} pré-preenche diálogo e altera projeto; (11) delete-receivable-{id} remove a linha; (12) smoke: /clientes, /galerias e a tabela de faturas em /financeiro continuam a funcionar normalmente. Nenhum pageerror durante o fluxo.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "PUT /api/receivables/{rid}",
+        "issue": "Whitelist de campos aceita 'received' via PUT (server.py:885) — se um utilizador enviar received > total via PUT, o receivable_view calcula balance negativo (não trunca). Não crítico porque a UI só chama /payment ou /pay, mas seria mais seguro clampar em receivable_view (max(0, balance)) ou rejeitar received>total no PUT."
+      },
+      {
+        "endpoint": "GET /api/clients (carry-over de iter 6/7)",
+        "issue": "Campo password_hash='' continua a vazar na resposta por causa do response_model=Client. Não tocado pela fase 8."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Financeiro / Contas a Receber",
+        "issues": ["Botões de ação (payment/pay/edit/delete) só aparecem em hover (opacity-0 group-hover:opacity-100). Em touch/mobile isto pode ser inacessível — considerar mostrar sempre em ecrãs pequenos. Não é regressão nem quebra o fluxo desktop."]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration8_receivables.py",
+    "/app/test_reports/pytest/iteration8_receivables.xml",
+    "/app/test_reports/pytest/iteration8_full.xml"
+  ],
+  "action_items": [
+    "IMPORTANTE — Nota para o main agent: o problem statement fala em rota /financial mas a app usa /financeiro (App.js:67). Se a intenção é manter /financeiro em PT, atualizar a documentação da task. Caso contrário adicionar alias <Route path='/financial' element={<Financial/>}/>.",
+    "(Opcional) PUT /api/receivables/{rid}: clampar received<=total ou rejeitar payload inválido para não permitir balance negativo via UI de edição.",
+    "(Carry-over) Fix password_hash leak em /api/clients.",
+    "(Nice-to-have) Mostrar botões de ação sem depender de hover em mobile/tablet."
+  ],
+  "critical_code_review_comments": [
+    "server.py:844-866 receivable_view — lógica de status correta (pago se total>0 e received>=total; parcial se received>0; vencido se due<hoje; pendente caso contrário). Boa clamping em partial payment (linhas 903-905). Mark-as-paid (912-926) faz push do balance remanescente como payment record — bom para auditoria.",
+    "server.py:1402 recv_open — usa max((total-received), 0), portanto ignora saldos negativos que possam existir por edição direta. Bom.",
+    "server.py:1404 receivable KPI = pendentes de invoices + recv_open — a fórmula mistura duas fontes (invoices tipo 'fatura' pendentes + receivables abertas). Isto é intencional mas pode inflacionar o KPI se o utilizador criar tanto uma fatura pendente como uma receivable para o mesmo trabalho. Documentar ou considerar deduplicar por client_name+project.",
+    "ReceivablesSection.jsx:82 markPaid — envia r.method como default; se a receivable ainda não tem método, mandará '' que fica gravado. OK, backend aceita.",
+    "ReceivablesSection.jsx:47 load() — chama onChanged() ANTES do api.get finalizar. Não bloqueia (é fire-and-forget) mas visualmente as duas coisas atualizam em paralelo, o que é o comportamento pretendido (KPI live).",
+    "ReceivablesSection.jsx:207 — quando clients está vazio, o Select degrada para Input livre. Boa gestão de fallback.",
+    "ReceivablesSection.jsx:189 delete-receivable — sem confirmação (mesma observação de iter 7 para galerias). Considerar AlertDialog para ação destrutiva.",
+    "Financial.jsx:213 — passa onChanged que refetcha /finance/summary. Perfeito para o requisito 'KPI atualiza sem refresh manual'. Verificado em Playwright.",
+    "server.py continua ~1590 linhas — carry-over do iter 6/7, refatorar em routers."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration8_receivables.py"
+  ],
+  "success_rate": {
+    "backend": "100% (13/13 novos testes iter8 + 104/104 regressão iter1-7 = 117 passed, 1 skipped AI-gated)",
+    "frontend": "100% (12/12 flows: KPIs+charts intactos, receivables-section, search, filter, sort, create com todos os testids do spec, partial payment status Parcial, KPI live update, mark-as-paid status Pago, edit persistência, delete, smoke /clientes+/galerias+faturas)"
+  },
+  "test_credentials": "Sem auth para app do fotógrafo (StudioHub). Portal (não testado nesta iteração): ana.rui@email.pt / cliente123.",
+  "seed_data_creation": "Nenhum novo seed. Os testes criam+eliminam próprios receivables com prefixo TEST_ e o test_zz_cleanup limpa o que sobrar.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Módulo Contas a Receber validado. Rota real em App.js:67 = /financeiro (não /financial). Novos endpoints backend em server.py: GET/POST /api/receivables (869-880), PUT /api/receivables/{rid} (883-890), POST /api/receivables/{rid}/payment (893-909 — retorna 400 se amount<=0, faz cap no total), POST /api/receivables/{rid}/pay (912-926 — força Recebido=Total e push do balance remanescente como payment record), DELETE /api/receivables/{rid} (929-932). Helper receivable_view (845-866): status={pago|parcial|vencido|pendente}, balance=total-received. GET /api/finance/summary (1394+) agora inclui recv_open no KPI receivable (linha 1402/1404). Frontend: ReceivablesSection.jsx renderizado no fim de Financial.jsx com onChanged={()=>refetch summary} — verifica-se atualização live do KPI kpi-receivable sem refresh. Testids conforme spec: receivables-section/search/filter/sort, add-receivable-btn, receivable-client-select|-input, receivable-project-input, receivable-total-input, receivable-received-input, receivable-due-input, receivable-method-select, save-receivable-btn, receivable-row-{id}, payment-receivable-{id}, pay-receivable-{id}, edit-receivable-{id}, delete-receivable-{id}, payment-amount-input, payment-method-select, save-payment-btn. Métodos válidos: Transferência, MB Way, Multibanco, Dinheiro, Cartão, Cheque. Regressão full backend: 117 passed + 1 skipped. Ficheiro de testes novo: /app/backend/tests/test_iteration8_receivables.py (13 testes).",
+  "rca of the issue": "Nenhum bug de produto encontrado. Único ponto de fricção durante o teste inicial foi que a URL do problem statement (/financial) não existe — a rota correcta em App.js é /financeiro (PT). Após corrigir a URL, todos os fluxos passaram. Item documentado em action_items para o main agent decidir se adiciona alias /financial."
+}

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, Request
 from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -18,6 +18,7 @@ import uuid
 from datetime import datetime, timezone, timedelta, date
 
 import httpx
+import stripe
 from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
 
 ROOT_DIR = Path(__file__).parent
@@ -30,6 +31,9 @@ db = client[os.environ['DB_NAME']]
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
 JWT_SECRET = os.environ.get('JWT_SECRET', 'dev-secret')
 JWT_ALG = "HS256"
+
+stripe.api_key = os.environ.get('STRIPE_SECRET_KEY') or 'sk_test_emergent'
+STRIPE_WEBHOOK_SECRET = os.environ.get('STRIPE_WEBHOOK_SECRET', '')
 
 
 def hash_password(pw: str) -> str:
@@ -359,6 +363,12 @@ class Order(BaseModel):
     total: float = 0
     status: str = "novo"
     notes: Optional[str] = ""
+    payment_status: str = "pending"
+    stripe_session_id: Optional[str] = ""
+    stripe_payment_intent_id: Optional[str] = ""
+    paid_at: Optional[str] = ""
+    currency: Optional[str] = "eur"
+    amount: Optional[float] = 0
     created_at: str = Field(default_factory=now_iso)
 
 
@@ -881,23 +891,112 @@ async def public_store_order(token: str, body: dict):
     items = body.get("items", [])
     if not items:
         raise HTTPException(400, "Carrinho vazio")
+    # Recompute prices server-side from products (fonte da verdade — evita manipulação)
+    prod_ids = [it.get("product_id") for it in items if it.get("product_id")]
+    prods = {}
+    if prod_ids:
+        async for p in db.products.find({"id": {"$in": prod_ids}}):
+            prods[p["id"]] = p
+    safe_items = []
+    for it in items:
+        p = prods.get(it.get("product_id"))
+        price = float(p["price"]) if p else float(it.get("price", 0) or 0)
+        name = p["name"] if p else it.get("name", "Produto")
+        qty = max(1, int(it.get("quantity", 1) or 1))
+        safe_items.append({
+            "product_id": it.get("product_id", ""), "name": name, "price": price, "quantity": qty,
+            "photo_name": it.get("photo_name", ""), "photo_url": it.get("photo_url", ""), "notes": it.get("notes", ""),
+        })
+    total = order_total(safe_items)
+    if total <= 0:
+        raise HTTPException(400, "Total inválido")
     count = await db.store_orders.count_documents({})
     number = f"ENC-{datetime.now().year}-{count + 1:04d}"
     obj = Order(number=number, customer_name=body.get("customer_name", ""), customer_email=body.get("customer_email", ""),
-                customer_phone=body.get("customer_phone", ""), items=items, total=order_total(items),
-                status="novo", notes=body.get("notes", ""))
+                customer_phone=body.get("customer_phone", ""), items=safe_items, total=total,
+                status="novo", notes=body.get("notes", ""), payment_status="pending", currency="eur", amount=total)
     order = obj.model_dump()
     order["gallery_token"] = token
+    order["gallery_id"] = doc.get("id", "")
     order["gallery_title"] = doc.get("title", "")
     photos, seen = [], set()
-    for it in items:
+    for it in safe_items:
         u = it.get("photo_url", "")
         if u and u not in seen:
             seen.add(u)
             photos.append({"name": it.get("photo_name", ""), "url": u})
     order["photos"] = photos
+
+    origin = (body.get("origin_url") or "").rstrip("/")
+    line_items = [{
+        "price_data": {
+            "currency": "eur",
+            "unit_amount": int(round(it["price"] * 100)),
+            "product_data": {"name": (it["name"] + (f" — {it['photo_name']}" if it.get("photo_name") else ""))[:250]},
+        },
+        "quantity": it["quantity"],
+    } for it in safe_items]
+    try:
+        session = stripe.checkout.Session.create(
+            mode="payment",
+            line_items=line_items,
+            success_url=f"{origin}/payment/success?session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{origin}/payment/cancel?order={order['id']}",
+            customer_email=(order.get("customer_email") or None),
+            metadata={"order_id": order["id"], "order_number": number, "gallery_id": order["gallery_id"]},
+        )
+    except Exception as e:
+        logger.exception("Stripe checkout error")
+        raise HTTPException(502, f"Erro ao criar sessão de pagamento: {e}")
+    order["stripe_session_id"] = session.id
     await db.store_orders.insert_one(order)
-    return {"ok": True, "order": clean(order)}
+    return {"ok": True, "order": clean(order), "checkout_url": session.url, "session_id": session.id}
+
+
+@api_router.get("/public/checkout/status/{session_id}")
+async def public_checkout_status(session_id: str):
+    # Apenas para atualização da interface. A confirmação oficial é feita pelo webhook.
+    order = await db.store_orders.find_one({"stripe_session_id": session_id}, {"_id": 0})
+    if not order:
+        raise HTTPException(404, "Pedido não encontrado")
+    live = None
+    try:
+        s = stripe.checkout.Session.retrieve(session_id)
+        live = s.payment_status
+    except Exception:
+        pass
+    return {"session_id": session_id, "order_number": order.get("number"),
+            "payment_status": order.get("payment_status", "pending"),
+            "stripe_status": live, "status": order.get("status"),
+            "total": order.get("total"), "currency": order.get("currency", "eur")}
+
+
+@api_router.post("/stripe/webhook")
+async def stripe_webhook(request: Request):
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature", "")
+    try:
+        event = stripe.Webhook.construct_event(payload, sig, STRIPE_WEBHOOK_SECRET)
+    except Exception:
+        raise HTTPException(400, "Invalid signature")
+    obj = event["data"]["object"]
+    etype = event["type"]
+    now = now_iso()
+    if etype == "checkout.session.completed":
+        await db.store_orders.update_one(
+            {"stripe_session_id": obj["id"], "payment_status": {"$ne": "paid"}},
+            {"$set": {"payment_status": "paid", "stripe_payment_intent_id": obj.get("payment_intent", ""), "paid_at": now}})
+    elif etype == "checkout.session.async_payment_succeeded":
+        await db.store_orders.update_one(
+            {"stripe_session_id": obj["id"], "payment_status": {"$ne": "paid"}},
+            {"$set": {"payment_status": "paid", "paid_at": now}})
+    elif etype in ("checkout.session.async_payment_failed", "checkout.session.expired"):
+        await db.store_orders.update_one(
+            {"stripe_session_id": obj["id"]}, {"$set": {"payment_status": "failed"}})
+    elif etype == "charge.refunded":
+        await db.store_orders.update_one(
+            {"stripe_payment_intent_id": obj.get("payment_intent")}, {"$set": {"payment_status": "refunded"}})
+    return {"status": "ok"}
 
 
 # ---------------- Calendar Events ----------------

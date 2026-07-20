@@ -85,17 +85,23 @@ export default function ClientGallery() {
     openPanel("checkout");
   };
   const finalizeOrder = async () => {
+    if (placing) return;
     if (cart.length === 0) return toast.error("Carrinho vazio");
     if (!customer.name.trim()) return toast.error("Indica o teu nome");
     setPlacing(true);
     try {
-      await api.post(`/public/galleries/${token}/store-order`, {
-        items: cart, customer_name: customer.name, customer_email: customer.email, customer_phone: customer.phone, notes: customer.notes,
+      const r = await api.post(`/public/galleries/${token}/store-order`, {
+        items: cart, customer_name: customer.name, customer_email: customer.email, customer_phone: customer.phone,
+        notes: customer.notes, origin_url: window.location.origin,
       });
-      toast.success("Pedido criado com sucesso!");
-      setCart([]); closePanel(); setCustomer({ name: "", email: "", phone: "", notes: "" });
-    } catch { toast.error("Não foi possível finalizar o pedido"); }
-    finally { setPlacing(false); }
+      const url = r?.data?.checkout_url;
+      if (!url) throw new Error("no url");
+      sessionStorage.setItem("studiohub_cart", JSON.stringify({ token }));
+      window.location.href = url;
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Não foi possível iniciar o pagamento");
+      setPlacing(false);
+    }
   };
 
   const downloadSelected = () => {
@@ -281,9 +287,9 @@ export default function ClientGallery() {
             </div>
             <div><Label>Notas</Label><Textarea data-testid="checkout-notes" value={customer.notes} onChange={(e) => setCustomer({ ...customer, notes: e.target.value })} className="mt-1.5" rows={2} /></div>
             <div className="flex items-center justify-between font-display text-lg font-medium pt-2 border-t border-border"><span>Total</span><span data-testid="checkout-total">{eur(subtotal)}</span></div>
-            <p className="text-[11px] text-muted-foreground">Sem pagamento online nesta fase — o estúdio recebe o pedido e trata do pagamento contigo.</p>
+            <p className="text-[11px] text-muted-foreground">Pagamento seguro processado pela Stripe. Serás redirecionado para concluir a compra.</p>
           </div>
-          <DialogFooter><Button data-testid="finalize-order-btn" disabled={placing} onClick={finalizeOrder} className="rounded-lg w-full">{placing ? "A processar..." : "Finalizar Pedido"}</Button></DialogFooter>
+          <DialogFooter><Button data-testid="finalize-order-btn" disabled={placing} onClick={finalizeOrder} className="rounded-lg w-full">{placing ? "A redirecionar..." : `Pagar ${eur(subtotal)}`}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

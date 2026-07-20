@@ -19,6 +19,7 @@ import Orcamentos from "@/pages/Orcamentos";
 import Contratos from "@/pages/Contratos";
 import IA from "@/pages/IA";
 import ClientGallery from "@/pages/ClientGallery";
+import { PaymentSuccess, PaymentCancel } from "@/pages/PaymentResult";
 import Definicoes from "@/pages/Definicoes";
 import ComingSoon from "@/pages/ComingSoon";
 import { SettingsProvider } from "@/lib/settings";
@@ -48,6 +49,8 @@ function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/g/:token" element={<ClientGallery />} />
+            <Route path="/payment/success" element={<PaymentSuccess />} />
+            <Route path="/payment/cancel" element={<PaymentCancel />} />
             <Route path="/portal/login" element={<PortalAuthProvider><PortalLogin /></PortalAuthProvider>} />
             <Route path="/portal" element={<PortalAuthProvider><PortalLayout /></PortalAuthProvider>}>
               <Route index element={<PortalDashboard />} />

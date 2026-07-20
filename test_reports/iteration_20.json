@@ -1,0 +1,34 @@
+{
+  "summary": "Full validation of Stripe Payments (TEST MODE) integration end-to-end. Backend pytest 6/6 passed: (1) POST /public/galleries/{token}/store-order recomputes prices SERVER-SIDE — item price manipulated from real 225€ to 0.01€ was IGNORED, returned order.total=450€ (real 225€ x qty 2), item name 'HACKED NAME' replaced with real product name, response contains checkout_url (checkout.stripe.com/c/pay/cs_test_...) + session_id, order.payment_status='pending', status='novo', currency='eur', stripe_session_id matches session_id; (2) empty cart -> 400; (3) GET /public/checkout/status/{session_id} returns DB payment_status='pending' plus live stripe_status='unpaid' WITHOUT flipping DB state; (4) status 404 for unknown session; (5-6) POST /stripe/webhook returns 400 on invalid AND missing signature. Frontend E2E (Playwright, viewport 1440x900) on /g/c16d3ba7e5f5 (Campanha Vinho Reserva): grid-buy -> buy-product-select -> add-to-cart-confirm -> cart opens (subtotal 450,00 €) -> checkout-open-btn -> filled checkout-name + checkout-email -> DOUBLE-CLICKED finalize-order-btn: only 1 POST /store-order captured (debounce OK via `placing` state) -> redirected to checkout.stripe.com (session cs_test_a1yfZcjXO7p3gQvtMSeVbYwzTzAVu5GX6m1n5y3pNhpWWeBFMX6UUDxhFL) -> selected EUR currency, filled card 4242 4242 4242 4242 exp 12/34 CVC 123 name+ZIP+PHONE -> Pay -> redirected to /payment/success?session_id=... -> payment-polling briefly visible -> payment-paid displayed with 'Pagamento confirmado! Obrigado. O teu pedido ENC-2026-0014 foi pago (450,00 €)'. Post-check GET /public/checkout/status/{session}: payment_status='paid' (webhook flipped it), stripe_status='paid', operational status='novo' (UNCHANGED as required), total=450, currency='eur'. /payment/cancel renders payment-cancel-page with 'Pagamento cancelado' and cancel-back-btn. Every acceptance criterion in the review request was satisfied.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      { "screen": "ClientGallery dialogs (buy, checkout) and PaymentResult", "issues": ["Console warning repeated: 'Missing Description or aria-describedby={undefined} for {DialogContent}' from Radix. Non-blocking a11y improvement — add <DialogDescription> or aria-describedby to buy/checkout/comment dialogs."] }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration20_stripe_payments.py",
+    "/app/test_reports/pytest/iter20_stripe.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py public_store_order (line 878): server-side price recompute using db.products is correctly used as source of truth; manipulated `price` and `name` from client are ignored — validated by test.",
+    "server.py stripe_webhook (line 974): uses stripe.Webhook.construct_event with STRIPE_WEBHOOK_SECRET and returns 400 on failure — matches contract. Update uses idempotent guard `payment_status: {\\\"$ne\\\": \\\"paid\\\"}` which prevents duplicate paid_at.",
+    "server.py public_checkout_status (line 956): correctly returns DB payment_status plus live stripe_status without flipping DB — respects rule that webhook is single source of truth.",
+    "ClientGallery.jsx finalizeOrder (line 87): early-return `if (placing) return;` + Button `disabled={placing}` + label switch to 'A redirecionar...' — debounce validated (1 request on rapid double-click).",
+    "ClientGallery.jsx line 215: static text below Pagar shows 'Sem pagamento online — o estúdio contacta-te para tratar do pagamento.' — this is STALE/WRONG now that Stripe is live. Consider replacing with the message in the checkout dialog ('Pagamento seguro processado pela Stripe...'). Low-priority copy fix.",
+    "server.py line 943 success_url: uses `{origin}/payment/success?session_id={CHECKOUT_SESSION_ID}` — origin comes from `body.get('origin_url')`. If a malicious client sends an arbitrary origin_url, Stripe will still redirect there. Not a security bug on Stripe side but consider validating origin against an allowlist.",
+    "server.py file is 2250 lines — beyond the 700-line threshold. Consider splitting into modules (galleries, store, payments, portal, receivables, etc.).",
+    "Radix a11y warnings on DialogContent for buy-modal / checkout / comment dialogs — add <DialogDescription> or aria-describedby (non-blocking)."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration20_stripe_payments.py"],
+  "success_rate": { "backend": "100% (6/6 pytest)", "frontend": "100% (E2E hosted-checkout completion, webhook->paid, cancel page, debounce)" },
+  "test_credentials": "No auth. Public gallery access_token c16d3ba7e5f5 (Campanha Vinho Reserva). Stripe TEST card 4242 4242 4242 4242, exp 12/34, CVC 123.",
+  "seed_data_creation": "conftest.py auto-calls POST /api/seed. Test-created order: ENC-2026-0014 (paid, 450€) via session cs_test_a1yfZcjXO7p3gQvtMSeVbYwzTzAVu5GX6m1n5y3pNhpWWeBFMX6UUDxhFL. Additional test orders created by backend suite (payment_status=pending).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Stripe TEST integration fully working: webhook is registered by sandbox to /api/stripe/webhook and reliably flips payment_status='paid' within seconds. To reproduce hosted-checkout completion you MUST also fill Phone number on the Stripe form (required in this sandbox) besides card/exp/CVC/name/ZIP; without it the Pay button stays in 'Processing' forever. Use `page.set_viewport_size({'width':1440,'height':900})` and `input[name=\"cardNumber|cardExpiry|cardCvc|billingName|billingPostalCode|phoneNumber\"]` selectors. Session ID is embedded in the Stripe URL as cs_test_...; capture with regex `(cs_test_[A-Za-z0-9]+)` to poll our backend after redirect. Note: fetches from checkout.stripe.com iframe context are blocked by CSP — verify status via curl to our backend instead.",
+  "rca of the issue": "N/A — no bugs. Payment feature works end-to-end."
+}

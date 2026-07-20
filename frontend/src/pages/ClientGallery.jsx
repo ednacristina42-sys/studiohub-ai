@@ -164,8 +164,17 @@ export default function ClientGallery() {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" data-testid="download-selected-btn" onClick={downloadSelected} className="rounded-lg gap-2"><Download className="h-4 w-4" /> <span className="hidden sm:inline">Selecionadas</span> ({selectedCount})</Button>
-          <Sheet open={cartOpen} onOpenChange={(o) => (o ? openPanel("cart") : closePanel("cart"))}>
-            <SheetTrigger asChild><Button size="sm" data-testid="cart-btn" className="rounded-lg gap-2"><ShoppingBag className="h-4 w-4" /> {itemCount}</Button></SheetTrigger>
+        </div>
+      </header>
+
+      <div className="fixed bottom-24 right-6 z-40">
+        <Sheet open={cartOpen} onOpenChange={(o) => (o ? openPanel("cart") : closePanel("cart"))}>
+            <SheetTrigger asChild>
+              <button data-testid="cart-btn" aria-label="Abrir carrinho" className="relative h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:scale-105 transition-transform">
+                <ShoppingBag className="h-6 w-6" />
+                {itemCount > 0 && <span data-testid="cart-count" className="absolute -top-1 -right-1 h-5 min-w-[20px] px-1 rounded-full bg-rose-500 text-white text-[11px] font-medium flex items-center justify-center">{itemCount}</span>}
+              </button>
+            </SheetTrigger>
             <SheetContent className="flex flex-col w-full sm:max-w-md">
               <SheetHeader><SheetTitle className="font-display font-medium">O teu carrinho</SheetTitle></SheetHeader>
               {cart.length === 0 ? <p className="text-sm text-muted-foreground py-10 text-center">Carrinho vazio.<br />Escolhe uma foto e adiciona um produto.</p> : (
@@ -204,7 +213,6 @@ export default function ClientGallery() {
             </SheetContent>
           </Sheet>
         </div>
-      </header>
 
       <main className="p-4 md:p-8 max-w-[1500px] mx-auto">
         <div className="flex flex-wrap gap-2 mb-6">

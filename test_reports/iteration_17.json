@@ -1,0 +1,60 @@
+{
+  "summary": "Correção UX (FAB do Assistente IA + Carrinho Flutuante) validada em desktop 1440x800 e mobile 390x844. Todos os requisitos passaram: (1) FAB IA reposicionado para bottom-24 (96px do fundo) sem colisão com o widget da plataforma, abre/fecha por clique/X/ESC/backdrop, painel a bottom-40 sem cortar conteúdo; (2) Galeria pública agora tem cart-btn flutuante bottom-right (bottom-24 right-6, z-40) circular, com badge cart-count vermelho, e o botão de carrinho já não existe no cabeçalho (apenas download-selected-btn); (3) e2e completo add-to-cart → badge incrementa → Sheet abre → cart-plus/minus/subtotal → checkout-open (Sheet fecha, exclusão mútua mantida) → finalize-order → toast 'Pedido criado com sucesso!' → carrinho limpo; (4) regressão de galeria (filtros/favoritar/selecionar/download) OK; smoke em /clientes /sessoes /galerias /calendario /financeiro /loja /ia /website /marketing todos 200 com AI FAB presente.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "AiAssistant.jsx: FAB em bottom-24 right-6 (z-40) e painel em bottom-40 right-6 (z-40) — layout consistente. Backdrop z-30 fica atrás do painel; clique fora fecha (validado). Bom.",
+    "ClientGallery.jsx: cart-btn dentro de <div className='fixed bottom-24 right-6 z-40'> com botão circular idêntico em dimensão ao FAB IA (h-14 w-14) — coerência visual. Como AI Assistant só é montado no Layout e a galeria pública é rota fora do Layout, não coexistem, não há colisão. Cabeçalho mantém apenas download-selected-btn como esperado.",
+    "Nota (não-bloqueador): as classes bottom-24 e right-6 do FAB e do cart-btn são idênticas — se algum dia uma página pública passar a montar o Assistente IA, os dois colidirão. Recomenda-se que o cart-btn no futuro use uma variante distinta (ex.: bottom-40) ou que o PanelProvider gerencie posicionamento automático. Fora do escopo atual porque nunca coexistem.",
+    "OBS: mensagens de warning do recharts (width(-1)/height(-1)) aparecem no Dashboard durante hidratação do sidebar recolhido; puramente cosmético, sem impacto funcional."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "n/a", "frontend": "100%" },
+  "test_credentials": "sem auth (galeria pública). access_token='c16d3ba7e5f5' de 'Campanha Vinho Reserva' (sem palavra-passe).",
+  "seed_data_creation": "Auto-seed via POST /api/seed (já existente). Foram criados 2 pedidos de teste na galeria via /store-order: 'TEST_desktop_Cliente' e 'TEST_mobile_Cliente' — esperado (parte do e2e).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Ambas as correções UX validadas. Posições exatas medidas: FAB IA e cart-btn ambos em (right=24px, bottom=96px) da viewport, tamanho 56x56, canto inferior direito. Painel IA (dialog) surge com bottom-40 (160px), evitando sobreposição com FAB e com o widget de plataforma Emergent. Em rotas /g/{token} o AI FAB não é montado (Layout-only). Em rotas do Layout o cart-btn não é montado (ClientGallery-only). Regressão de filtros/favoritar/selecionar/checkout/toast todos verdes.",
+  "detailed_results": {
+    "desktop_1440x800": {
+      "ai_fab_position": "PASS (right=24px, bottom=96px)",
+      "ai_open_click": "PASS",
+      "ai_close_x": "PASS",
+      "ai_close_esc": "PASS",
+      "ai_close_backdrop": "PASS",
+      "ai_fab_present_on_loja": "PASS",
+      "gallery_no_ai_fab": "PASS",
+      "gallery_cart_btn_floating": "PASS (right=24, bottom=96, size 56x56)",
+      "gallery_no_cart_in_header": "PASS (só download-selected-btn)",
+      "gallery_badge_absent_when_empty": "PASS",
+      "gallery_add_to_cart_grid_buy": "PASS (badge=2 após qty=2)",
+      "gallery_cart_sheet_opens": "PASS (subtotal 900,00 €)",
+      "gallery_cart_plus_minus": "PASS (3 → 1)",
+      "gallery_checkout_mutual_exclusion": "PASS (Sheet fecha ao abrir checkout)",
+      "gallery_finalize_order": "PASS (toast + badge desaparece)"
+    },
+    "mobile_390x844": {
+      "gallery_cart_btn_floating": "PASS (right=24, bottom=96)",
+      "gallery_no_ai_fab": "PASS",
+      "gallery_cart_sheet_opens_from_btn": "PASS",
+      "gallery_add_to_cart_lb_buy": "PASS (badge=1)",
+      "gallery_checkout_mutual_exclusion": "PASS",
+      "gallery_finalize_order": "PASS (badge cleared)",
+      "layout_ai_fab_position": "PASS (right=24, bottom=96)",
+      "layout_ai_open_close": "PASS"
+    },
+    "regression_gallery": {
+      "filters_present": "PASS (all/featured/fav/selected)",
+      "grid_favorite": "PASS",
+      "grid_select": "PASS",
+      "download_selected_btn_header": "PASS"
+    },
+    "smoke_nav_layout": "PASS (/, /clientes, /sessoes, /galerias, /calendario, /financeiro, /loja, /ia, /website, /marketing todos com ai-fab montado, sem erros de página)"
+  }
+}

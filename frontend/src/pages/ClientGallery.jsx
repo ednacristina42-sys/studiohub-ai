@@ -212,7 +212,7 @@ export default function ClientGallery() {
                     <div className="flex justify-between text-sm text-muted-foreground"><span>Itens</span><span>{itemCount}</span></div>
                     <div className="flex justify-between font-display text-lg font-medium"><span>Subtotal</span><span data-testid="cart-subtotal">{eur(subtotal)}</span></div>
                     <Button data-testid="checkout-open-btn" onClick={openCheckout} className="w-full rounded-lg">Finalizar Pedido</Button>
-                    <p className="text-[11px] text-muted-foreground text-center">Sem pagamento online — o estúdio contacta-te para tratar do pagamento.</p>
+                    <p className="text-[11px] text-muted-foreground text-center">Pagamento seguro processado pela Stripe.</p>
                   </div>
                 </>
               )}

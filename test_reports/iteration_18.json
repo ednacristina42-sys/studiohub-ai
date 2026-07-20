@@ -1,0 +1,34 @@
+{
+  "summary": "Testado o novo botão 'Adicionar produto' na Galeria Pública (/g/:token) em mobile (390x844), tablet (768x1024) e desktop (1440x800). Mobile e desktop funcionam conforme especificado, mas TABLET 768x1024 FALHA: o botão está oculto (opacity=0) porque o breakpoint Tailwind `md:` activa exactamente a 768px, o que contradiz o requisito 'tablet (~768x1024) deve estar SEMPRE VISÍVEL (sem hover)'. Fluxos de compra, carrinho, checkout e regressões (favoritos/álbum/aprovar/rejeitar/filtros/download/lightbox) continuam a funcionar.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "ClientGallery.jsx (grid-buy-{id})",
+        "issue": "Em viewport 768x1024 (tablet iPad portrait típico) o botão 'Adicionar produto' está com opacity=0, exigindo hover. Isto contradiz o requisito de estar SEMPRE VISÍVEL em tátil. Causa: uso das classes 'md:opacity-0 md:group-hover:opacity-100' onde o breakpoint Tailwind md=768px (>=). Comportamento observado por viewport: 390x844 opacity=1 ✅ · 767x1024 opacity=1 ✅ · 768x1024 opacity=0 ❌ (deveria ser 1) · 1440x800 opacity=0 sem hover / opacity=1 após hover ✅.",
+        "selector": "[data-testid^='grid-buy-']",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Corrigir o breakpoint de esconder o botão grid-buy. Substituir 'md:opacity-0 md:group-hover:opacity-100' por 'lg:opacity-0 lg:group-hover:opacity-100' (lg=1024px) para incluir tablets 768-1023px no grupo tátil. Alternativa mais robusta: usar media query '(hover: hover)' via variante `[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100`, garantindo hover só em dispositivos com hover real.",
+    "Considerar também aplicar o mesmo tratamento aos ícones grid-fav / grid-select (canto inferior direito), que continuam com 'opacity-0 group-hover:opacity-100' — no viewport mobile ficam invisíveis, tornando favoritar/selecionar inacessível em tátil. Nota: o pedido diz que estes ficam com hover 'intencionalmente', mas do ponto de vista UX o problema é análogo ao já corrigido para 'Adicionar produto'. Sinalizar ao utilizador para confirmar."
+  ],
+  "critical_code_review_comments": [
+    "ClientGallery.jsx linha 234: classes 'md:opacity-0 md:group-hover:opacity-100' produzem um off-by-one no boundary — a 768px exatos o botão fica oculto, prejudicando iPad portrait e tablets Android comuns.",
+    "ClientGallery.jsx linha 235: div com botões grid-fav/grid-select continua com 'opacity-0 group-hover:opacity-100' — em ecrãs táteis (sem hover) estas acções ficam inacessíveis na grelha. Mitigado apenas via lightbox (lb-fav/lb-select), mas a UX na grelha em mobile é limitada.",
+    "Ficheiro ClientGallery.jsx tem 294 linhas — dentro do limite, aceitável."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "n/a (não testado por instrução)", "frontend": "85% (5/6 requisitos OK, 1/6 falha no tablet)" },
+  "test_credentials": "Sem auth. Galeria pública via /g/{access_token}. Tokens usados: c16d3ba7e5f5 (Campanha Vinho Reserva) e d5b7d9cb9b44 (Casamento Ana & Rui).",
+  "seed_data_creation": "POST /api/seed executado; POST /api/galleries/02d235ba.../share para obter access_token da galeria com 3 fotos.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Após E1 alterar o breakpoint (recomendado lg: em vez de md:), retestar apenas o botão grid-buy em 3 viewports: 390x844 (opacity=1), 768x1024 (deve passar a opacity=1), 1440x800 (opacity=0 sem hover, =1 após hover). Restante fluxo (modal → carrinho → checkout) já validado nesta iteração, não é preciso repetir.",
+  "rca of the issue": "REPRODUÇÃO: 1) POST /api/seed; 2) obter access_token de qualquer galeria; 3) navegar /g/{token} em viewport 768x1024; 4) observar botão 'Adicionar produto' invisível (opacity computada = 0). CAUSA RAIZ: linha 234 de ClientGallery.jsx usa Tailwind 'md:opacity-0 md:group-hover:opacity-100'. O breakpoint 'md' no Tailwind é '@media (min-width: 768px)' — logo, exatamente a 768px (iPad portrait) as classes activam e escondem o botão até haver hover, mas em tablets não há hover fiável (touch). MITIGAÇÃO: alterar o par de classes para 'lg:opacity-0 lg:group-hover:opacity-100' (lg=1024px) — mantém desktops com hover mas cobre iPad/tablets Android; OU adoptar variante '(hover: hover)' para maior robustez em híbridos."
+}

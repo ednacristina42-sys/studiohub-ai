@@ -20,7 +20,16 @@ export function PaymentSuccess() {
     let timer;
     const poll = async () => {
       try {
-        const r = await api.get(`/public/checkout/status/${sessionId}`);
+        const r = await api.get(`/public/checkout/status/${sessionId}`, {
+          validateStatus: (s) => (s >= 200 && s < 300) || s === 404,
+        });
+        if (r.status === 404) {
+          // Pedido ainda não disponível para este session_id — estado esperado durante o polling.
+          attempts.current += 1;
+          if (attempts.current >= MAX_POLLS) { setState("pending"); return; }
+          timer = setTimeout(poll, 2000);
+          return;
+        }
         setOrder(r.data);
         if (r.data.payment_status === "paid") { setState("paid"); return; }
         if (r.data.payment_status === "failed") { setState("error"); return; }

@@ -14,6 +14,7 @@ import GalleryDetail from "@/pages/GalleryDetail";
 import CalendarPage from "@/pages/CalendarPage";
 import Financial from "@/pages/Financial";
 import Reports from "@/pages/Reports";
+import Store from "@/pages/Store";
 import Orcamentos from "@/pages/Orcamentos";
 import Contratos from "@/pages/Contratos";
 import IA from "@/pages/IA";
@@ -30,7 +31,6 @@ import {
 } from "@/pages/portal/PortalPages";
 
 const soon = [
-  { path: "/loja", title: "Loja", desc: "Venda fotografias, impressões, álbuns e produtos com checkout." },
   { path: "/website", title: "Website", desc: "Portfólio, blog, SEO e domínio personalizado." },
   { path: "/marketing", title: "Marketing", desc: "Email, WhatsApp, redes sociais e landing pages." },
   { path: "/automacoes", title: "Automações", desc: "Fluxos automáticos para poupar horas de trabalho." },
@@ -67,6 +67,7 @@ function App() {
               <Route path="/calendario" element={<CalendarPage />} />
               <Route path="/financeiro" element={<Financial />} />
               <Route path="/financeiro/relatorios" element={<Reports />} />
+              <Route path="/loja" element={<Store />} />
               <Route path="/orcamentos" element={<Orcamentos />} />
               <Route path="/contratos" element={<Contratos />} />
               <Route path="/ia" element={<IA />} />

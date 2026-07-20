@@ -305,6 +305,33 @@ class PayableCreate(BaseModel):
     notes: Optional[str] = ""
 
 
+# ---------------- Loja Online (Store) ----------------
+class Product(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    description: Optional[str] = ""
+    category: Optional[str] = ""
+    price: float = 0
+    image_url: Optional[str] = ""
+    active: bool = True
+    created_at: str = Field(default_factory=now_iso)
+
+
+class ProductCreate(BaseModel):
+    name: str
+    description: Optional[str] = ""
+    category: Optional[str] = ""
+    price: float = 0
+    image_url: Optional[str] = ""
+    active: bool = True
+
+
+class StoreCategory(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    created_at: str = Field(default_factory=now_iso)
+
+
 class Quote(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     number: str
@@ -709,22 +736,6 @@ async def gallery_ai_search(gallery_id: str, body: dict):
     return {"ids": ids, "query": query}
 
 
-# ---------------- Store products ----------------
-STORE_PRODUCTS = [
-    {"id": "digital", "name": "Fotografia digital (alta resolução)", "price": 12, "type": "digital"},
-    {"id": "print-a4", "name": "Impressão A4 premium", "price": 18, "type": "impressao"},
-    {"id": "print-a3", "name": "Impressão A3 premium", "price": 28, "type": "impressao"},
-    {"id": "album", "name": "Álbum 30x30 (20 páginas)", "price": 180, "type": "album"},
-    {"id": "canvas", "name": "Quadro em tela 50x70", "price": 95, "type": "quadro"},
-    {"id": "pack10", "name": "Pack 10 fotografias digitais", "price": 90, "type": "pack"},
-]
-
-
-@api_router.get("/store/products")
-async def store_products():
-    return STORE_PRODUCTS
-
-
 # ---------------- Session -> Gallery ----------------
 @api_router.post("/sessions/{session_id}/gallery", response_model=Gallery)
 async def session_gallery(session_id: str):
@@ -1043,6 +1054,82 @@ async def delete_payable(pid: str):
     return {"ok": True}
 
 
+# ---------------- Loja: Categorias ----------------
+@api_router.get("/store/categories")
+async def list_store_categories():
+    return await db.store_categories.find({}, {"_id": 0}).sort("name", 1).to_list(500)
+
+
+@api_router.post("/store/categories")
+async def create_store_category(body: dict):
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "O nome da categoria é obrigatório")
+    existing = await db.store_categories.find_one({"name": name}, {"_id": 0})
+    if existing:
+        return existing
+    obj = StoreCategory(name=name)
+    await db.store_categories.insert_one(obj.model_dump())
+    return clean(obj.model_dump())
+
+
+@api_router.delete("/store/categories/{cid}")
+async def delete_store_category(cid: str):
+    await db.store_categories.delete_one({"id": cid})
+    return {"ok": True}
+
+
+# ---------------- Loja: Produtos ----------------
+@api_router.get("/store/products")
+async def list_products(category: str = "", active: str = ""):
+    query = {}
+    if category:
+        query["category"] = category
+    if active in ("true", "false"):
+        query["active"] = active == "true"
+    docs = await db.products.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return docs
+
+
+@api_router.post("/store/products")
+async def create_product(payload: ProductCreate):
+    data = payload.model_dump()
+    data["price"] = max(float(data.get("price", 0) or 0), 0)
+    obj = Product(**data)
+    doc = obj.model_dump()
+    await db.products.insert_one(doc)
+    return clean(doc)
+
+
+@api_router.put("/store/products/{pid}")
+async def update_product(pid: str, body: dict):
+    fields = {k: body[k] for k in ["name", "description", "category", "price", "image_url", "active"] if k in body}
+    if "price" in fields:
+        fields["price"] = max(float(fields["price"] or 0), 0)
+    await db.products.update_one({"id": pid}, {"$set": fields})
+    doc = await db.products.find_one({"id": pid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Produto não encontrado")
+    return doc
+
+
+@api_router.patch("/store/products/{pid}/toggle")
+async def toggle_product(pid: str):
+    doc = await db.products.find_one({"id": pid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Produto não encontrado")
+    new_active = not doc.get("active", True)
+    await db.products.update_one({"id": pid}, {"$set": {"active": new_active}})
+    doc["active"] = new_active
+    return doc
+
+
+@api_router.delete("/store/products/{pid}")
+async def delete_product(pid: str):
+    await db.products.delete_one({"id": pid})
+    return {"ok": True}
+
+
 # ---------------- Dashboard ----------------
 @api_router.get("/dashboard/stats")
 async def dashboard_stats():
@@ -1250,6 +1337,19 @@ async def seed():
         {"id": str(uuid.uuid4()), "client_name": "João Marques", "project": "Batizado do Tomás", "total": 738, "received": 300, "due_date": dt(-3), "method": "Dinheiro", "payments": [{"amount": 300, "method": "Dinheiro", "date": now_iso()}], "created_at": now_iso()},
     ]
     await db.receivables.insert_many(receivables)
+
+    store_categories = ["Impressões", "Álbuns", "Molduras", "Canvas", "Ficheiros Digitais", "Packs"]
+    await db.store_categories.insert_many([StoreCategory(name=n).model_dump() for n in store_categories])
+
+    products = [
+        {"id": str(uuid.uuid4()), "name": "Impressão Fine Art 30x40", "description": "Impressão premium em papel Hahnemühle.", "category": "Impressões", "price": 35, "image_url": imgs[0], "active": True, "created_at": now_iso()},
+        {"id": str(uuid.uuid4()), "name": "Álbum Luxo 30x30 (20 páginas)", "description": "Álbum capa dura com acabamento em linho.", "category": "Álbuns", "price": 180, "image_url": imgs[2], "active": True, "created_at": now_iso()},
+        {"id": str(uuid.uuid4()), "name": "Moldura de Madeira 20x30", "description": "Moldura artesanal com vidro anti-reflexo.", "category": "Molduras", "price": 45, "image_url": imgs[3], "active": True, "created_at": now_iso()},
+        {"id": str(uuid.uuid4()), "name": "Canvas 40x60", "description": "Tela esticada em bastidor de madeira.", "category": "Canvas", "price": 90, "image_url": imgs[4], "active": True, "created_at": now_iso()},
+        {"id": str(uuid.uuid4()), "name": "Pack Digital — 10 fotos editadas", "description": "Ficheiros em alta resolução para download.", "category": "Ficheiros Digitais", "price": 60, "image_url": imgs[1], "active": True, "created_at": now_iso()},
+        {"id": str(uuid.uuid4()), "name": "Pack Casamento Completo", "description": "Álbum + 2 canvas + galeria digital.", "category": "Packs", "price": 450, "image_url": imgs[5], "active": False, "created_at": now_iso()},
+    ]
+    await db.products.insert_many(products)
 
     return {"seeded": True}
 

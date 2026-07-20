@@ -38,7 +38,7 @@ export default function ClientGallery() {
       toast.error(e?.response?.status === 410 ? "O link expirou" : "Galeria não encontrada");
     } finally { setLoading(false); }
   };
-  useEffect(() => { fetchGallery(); api.get("/store/products").then((r) => setProducts(r.data)); }, [token]);
+  useEffect(() => { fetchGallery(); api.get("/store/products?active=true").then((r) => setProducts(r.data)); }, [token]);
 
   const verify = async () => {
     try { const r = await api.post(`/public/galleries/${token}/verify`, { password: pin }); setGallery(r.data); setProtectedGate(null); }

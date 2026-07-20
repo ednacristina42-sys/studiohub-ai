@@ -1,0 +1,40 @@
+{
+  "summary": "Iteração 12 — Loja Online (FASE 1) totalmente testada. Backend (18/18 pytest verdes) e Frontend (Playwright OK) cobrem: categorias (GET/POST idempotente/DELETE), produtos (GET com filtros ?category & ?active, POST com clamp de preço, PUT, PATCH /toggle, DELETE), unificação da rota GET /store/products (5 ativos + 1 inativo 'Pack Casamento Completo'), UI /loja (grelha, CRUD, filtros, gestão de categorias) e regressão da galeria pública /g/:token (dropdown Comprar lb-buy-{id} + carrinho + checkout MOCK que retornou {ok:true, mock:true, total:60}). Smoke de /financeiro e restantes módulos sem quebras.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Store & ClientGallery Dialog", "issues": ["Warning React: DialogContent sem 'Description' ou aria-describedby (a11y, não bloqueia funcionamento)"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration12_store.py",
+    "/app/test_reports/pytest/iteration_12.xml"
+  ],
+  "action_items": [
+    "(Opcional/a11y) Adicionar DialogDescription (ou aria-describedby) em DialogContent para eliminar warning de acessibilidade nos modais de Store e ClientGallery.",
+    "(Já documentado como conhecido, não bug) Eliminar categoria não desassocia produtos que a referenciam por nome — comportamento atual esperado nesta fase."
+  ],
+  "critical_code_review_comments": [
+    "server.py está grande (~1985 linhas): considerar dividir por domínio (routers) numa próxima refactor.",
+    "GET /store/products está unificado e usa apenas db.products (sem colisão com bloco hardcoded). ✅",
+    "POST /store/categories é idempotente por 'name' e devolve o registo existente. ✅",
+    "POST/PUT /store/products fazem clamp do preço a max(price, 0). ✅",
+    "PATCH /store/products/{id}/toggle inverte o boolean e retorna doc atualizado (limpo de _id). ✅",
+    "Todos os retornos MongoDB usam projeção {_id:0} — sem risco de ObjectId serialization."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration12_store.py (novo)"
+  ],
+  "success_rate": {"backend": "100% (18/18)", "frontend": "100% dos fluxos-chave"},
+  "test_credentials": "Sem auth na app do fotógrafo. Portal cliente (não testado nesta iter): ana.rui@email.pt / cliente123 (já em /app/memory/test_credentials.md).",
+  "seed_data_creation": "Auto-seed já existente (POST /api/seed idempotente por count>0). 6 categorias, 6 produtos (5 ativos + 'Pack Casamento Completo' inativo).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Rota GET /store/products está unificada em db.products (bloco hardcoded STORE_PRODUCTS foi removido). Token de partilha da galeria é campo 'access_token' (não 'share_token'). Lightbox na /g/:token abre ao clicar na imagem da grelha (main img) e contém o Select data-testid=lb-buy-{id}. Para fechar a lightbox usar Escape antes de clicar em cart-btn (senão o overlay bloqueia). Base URL de preview: https://photo-studio-pro-31.preview.emergentagent.com.",
+  "rca of the issue": "N/A — nenhum bug bloqueante encontrado."
+}

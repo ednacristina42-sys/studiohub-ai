@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, eur } from "@/lib/api";
+import { usePanels } from "@/lib/panels";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,12 +29,13 @@ export default function ClientGallery() {
   const [products, setProducts] = useState([]);
   const [cart, setCart] = useState([]);
   const [comment, setComment] = useState("");
-  const [cartOpen, setCartOpen] = useState(false);
+  const { active, open: openPanel, close: closePanel } = usePanels();
+  const cartOpen = active === "cart";
+  const checkoutOpen = active === "checkout";
   const [buyPhoto, setBuyPhoto] = useState(null);
   const [buyProduct, setBuyProduct] = useState("");
   const [buyQty, setBuyQty] = useState(1);
   const [buyNotes, setBuyNotes] = useState("");
-  const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [customer, setCustomer] = useState({ name: "", email: "", phone: "", notes: "" });
   const [placing, setPlacing] = useState(false);
 
@@ -71,7 +73,7 @@ export default function ClientGallery() {
     const qty = Math.max(1, Number(buyQty) || 1);
     setCart((c) => [...c, { product_id: p.id, name: p.name, price: p.price, quantity: qty, photo_name: buyPhoto?.name || "", photo_url: buyPhoto?.url || "", notes: buyNotes }]);
     toast.success("Adicionado ao carrinho");
-    setBuyPhoto(null); setCartOpen(true);
+    setBuyPhoto(null); openPanel("cart");
   };
   const changeQty = (idx, delta) => setCart((c) => c.map((it, i) => i === idx ? { ...it, quantity: Math.max(1, it.quantity + delta) } : it));
   const removeItem = (idx) => setCart((c) => c.filter((_, i) => i !== idx));
@@ -80,7 +82,7 @@ export default function ClientGallery() {
 
   const openCheckout = () => {
     setCustomer((c) => ({ ...c, name: c.name || gallery?.client_name || "" }));
-    setCheckoutOpen(true);
+    openPanel("checkout");
   };
   const finalizeOrder = async () => {
     if (cart.length === 0) return toast.error("Carrinho vazio");
@@ -91,7 +93,7 @@ export default function ClientGallery() {
         items: cart, customer_name: customer.name, customer_email: customer.email, customer_phone: customer.phone, notes: customer.notes,
       });
       toast.success("Pedido criado com sucesso!");
-      setCart([]); setCheckoutOpen(false); setCartOpen(false); setCustomer({ name: "", email: "", phone: "", notes: "" });
+      setCart([]); closePanel(); setCustomer({ name: "", email: "", phone: "", notes: "" });
     } catch { toast.error("Não foi possível finalizar o pedido"); }
     finally { setPlacing(false); }
   };
@@ -162,7 +164,7 @@ export default function ClientGallery() {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" data-testid="download-selected-btn" onClick={downloadSelected} className="rounded-lg gap-2"><Download className="h-4 w-4" /> <span className="hidden sm:inline">Selecionadas</span> ({selectedCount})</Button>
-          <Sheet open={cartOpen} onOpenChange={setCartOpen}>
+          <Sheet open={cartOpen} onOpenChange={(o) => (o ? openPanel("cart") : closePanel("cart"))}>
             <SheetTrigger asChild><Button size="sm" data-testid="cart-btn" className="rounded-lg gap-2"><ShoppingBag className="h-4 w-4" /> {itemCount}</Button></SheetTrigger>
             <SheetContent className="flex flex-col w-full sm:max-w-md">
               <SheetHeader><SheetTitle className="font-display font-medium">O teu carrinho</SheetTitle></SheetHeader>
@@ -260,7 +262,7 @@ export default function ClientGallery() {
       </Dialog>
 
       {/* Checkout */}
-      <Dialog open={checkoutOpen} onOpenChange={setCheckoutOpen}>
+      <Dialog open={checkoutOpen} onOpenChange={(o) => (o ? openPanel("checkout") : closePanel("checkout"))}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader><DialogTitle className="font-display font-medium">Finalizar pedido</DialogTitle></DialogHeader>
           <div className="space-y-4 py-1">

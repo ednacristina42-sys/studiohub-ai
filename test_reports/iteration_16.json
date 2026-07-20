@@ -1,0 +1,47 @@
+{
+  "summary": "UX de coordenação de painéis (Assistente IA + Carrinho + Checkout) testada em desktop 1920x900 e mobile 390x844. Todos os requisitos da revisão passaram: fecho do Assistente IA por X/ESC/backdrop nas páginas do Layout (/, /loja), exclusão mútua carrinho↔checkout na galeria pública /g, e2e do pedido cria toast de sucesso e limpa carrinho, ausência do FAB IA em /g, resposta viva do AiChat em /ia e no widget flutuante, e smoke navegação em todos os módulos principais.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "panels.jsx (14 linhas) é focado e correto. State machine simples (single-active) é suficiente para o requisito. Boa separação de responsabilidades.",
+    "AiAssistant.jsx: listener de Escape apenas registado quando open=true (bom, evita fugas). Backdrop com z-30 e painel com z-40 é consistente. Sem problemas.",
+    "ClientGallery.jsx: onOpenChange de Sheet e Dialog liga corretamente com openPanel/closePanel, garantindo que fechar via ESC/backdrop dos componentes shadcn também limpa o estado global. Sem problemas.",
+    "OBS (não-bloqueador): no /loja com viewport mobile, o painel IA cobre a maior parte da área central; um clique automatizado no 'center' do backdrop (Playwright default) atinge o painel. Comportamento real (utilizador clica em zona visível do backdrop, ex.: topo) fecha corretamente. Não é bug funcional — só uma nota para futuros testes automatizados usarem coordenadas explícitas na zona não coberta em mobile."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "n/a", "frontend": "100%" },
+  "test_credentials": "sem auth (galeria pública), token access_token='c16d3ba7e5f5' obtido via POST /api/galleries/{id}/share sobre 'Campanha Vinho Reserva'",
+  "seed_data_creation": "Auto-seed via POST /api/seed no arranque da app. Nenhum dado adicional criado além de um pedido de teste 'TEST_desktop_Cliente' e 'TEST_mobile_Cliente' via /store-order da galeria (esperado — flow e2e).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "PanelProvider (single-active) coordena AI/Cart/Checkout. AI Assistant só é montado nas rotas do Layout (autenticadas). Em rota pública /g/{token} não existe FAB IA. Cart Sheet e Checkout Dialog usam onOpenChange controlado por openPanel/closePanel, portanto fechar via ESC ou clique fora do shadcn também limpa o estado global. Para testar backdrop no mobile em Playwright, clicar em coordenadas fora da área do painel (ex.: page.mouse.click(200, 40)) — o click default no centro do backdrop cai sobre o painel devido às dimensões em viewport pequeno.",
+  "detailed_results": {
+    "ai_close_desktop_home": { "x_button": "PASS", "esc": "PASS", "backdrop": "PASS" },
+    "ai_close_desktop_loja": { "x_button": "PASS", "esc": "PASS", "backdrop": "PASS" },
+    "ai_close_mobile_loja": { "x_button": "PASS", "esc": "PASS", "backdrop": "PASS (via clique em zona não coberta)" },
+    "gallery_panel_exclusion_desktop": {
+      "add_to_cart": "PASS",
+      "cart_opens": "PASS",
+      "checkout_opens_and_cart_closes": "PASS",
+      "finalize_order_toast": "PASS",
+      "cart_cleared_to_zero": "PASS"
+    },
+    "gallery_panel_exclusion_mobile": {
+      "add_to_cart": "PASS",
+      "cart_opens": "PASS",
+      "checkout_opens_and_cart_closes": "PASS",
+      "finalize_order_toast": "PASS",
+      "cart_cleared_to_zero": "PASS"
+    },
+    "no_ai_fab_on_public_gallery": "PASS",
+    "smoke_nav": "PASS (/, /clientes, /sessoes, /galerias, /calendario, /financeiro, /loja, /orcamentos, /contratos, /definicoes todos 200 com ai-fab presente)",
+    "ai_chat_response_ia_page": "PASS",
+    "ai_chat_response_floating_widget": "PASS (resposta 'Bom dia!' recebida em ~7s)"
+  }
+}

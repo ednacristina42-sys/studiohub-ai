@@ -22,6 +22,7 @@ import ClientGallery from "@/pages/ClientGallery";
 import Definicoes from "@/pages/Definicoes";
 import ComingSoon from "@/pages/ComingSoon";
 import { SettingsProvider } from "@/lib/settings";
+import { PanelProvider } from "@/lib/panels";
 import { PortalAuthProvider } from "@/lib/portalAuth";
 import PortalLogin from "@/pages/portal/PortalLogin";
 import PortalLayout from "@/pages/portal/PortalLayout";
@@ -41,6 +42,7 @@ function App() {
   return (
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
       <SettingsProvider>
+      <PanelProvider>
       <div className="App grain">
         <Toaster position="top-right" richColors closeButton />
         <BrowserRouter>
@@ -79,6 +81,7 @@ function App() {
           </Routes>
         </BrowserRouter>
       </div>
+      </PanelProvider>
       </SettingsProvider>
     </ThemeProvider>
   );

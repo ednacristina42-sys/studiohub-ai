@@ -1244,6 +1244,7 @@ async def create_order(payload: OrderCreate):
     if status not in ORDER_STATES:
         status = "novo"
     obj = Order(number=number, customer_name=data.get("customer_name", ""), customer_email=data.get("customer_email", ""),
+                customer_phone=data.get("customer_phone", ""),
                 items=items, total=order_total(items), status=status, notes=data.get("notes", ""))
     doc = obj.model_dump()
     await db.store_orders.insert_one(doc)

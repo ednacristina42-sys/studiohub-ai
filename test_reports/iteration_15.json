@@ -1,0 +1,38 @@
+{
+  "summary": "Iteração 15 — Re-teste dos 2 bugs HIGH corrigidos + E2E completo. TUDO VERDE. Backend pytest 19/19 (test_iteration14_store_order_from_gallery). Bug backend 'admin POST /api/store/orders sem customer_phone' está CORRIGIDO: o teste test_admin_create_order_with_phone_and_photo_fields confirma que POST devolve customer_phone='+351 933 222 111' e o GET persiste. Bug frontend StoreOrders.jsx confirmado corrigido: (a) botão data-testid='view-order-{id}' presente na coluna Ações e clicável (3 encontrados na tabela); (b) import Badge presente (linha 9) — dialog order-detail abre e renderiza <Badge>Enviado</Badge> sem qualquer ReferenceError na consola. E2E galeria pública (/g/{token}): grid-buy → modal produto → add-to-cart-confirm → cart-btn → cart-plus (subtotal 120→180€) → checkout-open-btn → preenchimento name/email/phone/notes → finalize-order-btn → toast 'Pedido criado com sucesso!' visível. Verificado depois em /loja: pedido ENC-2026-0004 aparece com estado 'Novo', ao abrir view-order o dialog mostra Cliente, Estado (Badge), Email, Telefone (+351 961 999 888), Galeria 'Campanha Vinho Reserva', Fotos compradas (1 miniatura), Produto com miniatura+notas ('TEST_e2e_note'), Observações, Total 180,00 €. Smoke regressão: /clients, /sessions, /invoices, /receivables, /payables, /store/*, /galleries todos 200.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "ClientGallery Dialogs", "issues": ["Warnings React persistentes: Missing `Description` or `aria-describedby={undefined}` para DialogContent (modal Comentar, Adicionar Produto, Checkout, e também order-detail em StoreOrders). Não bloqueia, polui consola. Adicionar <DialogDescription> ou aria-describedby."]},
+      {"screen": "Admin Loja→Pedidos", "issues": ["Coluna Ações ainda usa md:opacity-0 md:group-hover:opacity-100 — utilizadores de teclado/toque não veem que existem ações em desktop até fazerem hover. Recomendação a11y: manter sempre visível."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration14_store_order_from_gallery.py",
+    "/app/test_reports/pytest/iteration_15.xml"
+  ],
+  "action_items": [
+    "Nada bloqueante. Fluxos Fase 2 Loja Online 100% funcionais.",
+    "(Opcional) Adicionar <DialogDescription> aos Dialog do ClientGallery.jsx e StoreOrders.jsx (order-detail) para remover warnings a11y.",
+    "(Opcional) Mostrar sempre coluna Ações em desktop em StoreOrders.jsx (remover md:opacity-0 group-hover) para melhor a11y."
+  ],
+  "critical_code_review_comments": [
+    "server.py aproxima-se de ~2150 linhas — refactor em routers por domínio recomendado.",
+    "public_store_order() gera nº via count_documents({}) + 1 — risco baixo de race condition em concorrência simultânea. Considerar contador atómico.",
+    "Order.total sempre recalculado server-side via order_total() — correto.",
+    "Consistência atingida: create_order (admin) e public_store_order agora ambos propagam customer_phone."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (19/19 pytest)", "frontend": "100% (view-order + order-detail + E2E galeria + regression)"},
+  "test_credentials": "Sem auth. Galeria seed 'Campanha Vinho Reserva' sem password. Token obtido via POST /api/galleries/{id}/share.",
+  "seed_data_creation": "Pedido E2E ENC-2026-0004 (TEST_E2E Cliente 15) criado durante testes e removido no final via DELETE /api/store/orders/{id} (status 200).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Fase 2 Loja Online COMPLETA e sem bugs conhecidos. Todos os fluxos validados: (1) admin CRUD pedidos + view-order dialog com fotos/telefone/galeria, (2) galeria pública compra completa com carrinho lateral + checkout, (3) pedido criado na galeria aparece em /loja tab Pedidos com dados completos. Backend endpoints estáveis: POST /api/public/galleries/{token}/store-order, GET/POST/PUT/PATCH/DELETE /api/store/orders. Base API=REACT_APP_BACKEND_URL+/api. Token galeria=access_token (campo em POST /api/galleries/{id}/share). Estados pedido: novo/pago/em_producao/enviado/entregue/cancelado.",
+  "rca of the issue": "N/A — os 2 bugs HIGH da iteração 14 foram confirmados corrigidos. Fix 1 (backend): server.py create_order agora inclui customer_phone=data.get('customer_phone',''). Fix 2 (frontend): StoreOrders.jsx tem import Badge (L9) e botão <Button data-testid={`view-order-${o.id}`} onClick={()=>setViewing(o)}> na coluna Ações (L131). Ambos verificados por pytest + Playwright E2E."
+}

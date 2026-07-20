@@ -1,0 +1,24 @@
+{
+  "summary": "RE-TESTE do bug HIGH reportado na iteration_18 (breakpoint md=768 apanhava iPad portrait 768x1024). Fix aplicado por E1: classes agora 'opacity-100 lg:opacity-0 lg:group-hover:opacity-100' (lg=1024). Validado em 5 viewports: 390x844 opacity=1 ✅, 768x1024 opacity=1 ✅ (BUG RESOLVIDO), 1023x800 opacity=1 ✅, 1024x800 opacity=0 sem hover → 1 com hover ✅, 1440x800 opacity=0 sem hover → 1 com hover ✅. Além disso, validadas todas as regressões pedidas: modal grid-buy (5 produtos), cart-count incrementa, lb-buy no lightbox abre o mesmo modal, cart-btn mantém posição (bottom-right), subtotal 450,00 €, cart-remove presente, checkout-open-btn → finalize-order-btn cria pedido (toast 'Pedido criado com sucesso!') e limpa badge. lb-fav/lb-select presentes.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ClientGallery.jsx linha 234: fix aplicado corretamente ('opacity-100 lg:opacity-0 lg:group-hover:opacity-100'). Cobre mobile (<640), tablets (640-1023 incl. iPad 768) e mantém hover apenas em desktop (>=1024).",
+    "Nota UX (pré-existente, não bloqueante): grid-fav/grid-select (linha 235) continuam com 'opacity-0 group-hover:opacity-100' — em ecrãs táteis ficam invisíveis, mas continuam acessíveis via lb-fav/lb-select no lightbox. Se necessário no futuro, aplicar o mesmo padrão do grid-buy.",
+    "Warning de acessibilidade Radix repetido em consola: 'Missing Description or aria-describedby={undefined} for {DialogContent}' em Dialogs (buy modal / checkout). Não bloqueia funcionalidade mas convém adicionar <DialogDescription> ou aria-describedby."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "n/a (skip por instrução)", "frontend": "100% (6/6 requisitos OK, bug da iteration_18 resolvido)" },
+  "test_credentials": "Sem auth. Galeria pública 'Campanha Vinho Reserva' via /g/c16d3ba7e5f5.",
+  "seed_data_creation": "POST /api/seed executado antes do teste.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Fix do breakpoint validado em 5 viewports. Não é necessário retestar galeria pública. Se houver alterações futuras a ClientGallery.jsx, reutilizar os viewports 390/768/1023/1024/1440 para confirmar comportamento tátil vs. hover.",
+  "rca of the issue": "Bug da iteration_18 (opacity=0 a 768x1024) foi resolvido substituindo o prefixo 'md:' (breakpoint Tailwind >=768px) por 'lg:' (>=1024px). Confirmação por getComputedStyle: 768x1024 passa de opacity=0 (bug) → opacity=1 (fixed). Desktop mantém a UX pretendida (hover-to-reveal a partir de 1024)."
+}

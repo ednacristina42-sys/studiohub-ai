@@ -344,6 +344,9 @@ class OrderItem(BaseModel):
     name: str
     price: float = 0
     quantity: int = 1
+    photo_name: Optional[str] = ""
+    photo_url: Optional[str] = ""
+    notes: Optional[str] = ""
 
 
 class Order(BaseModel):
@@ -351,6 +354,7 @@ class Order(BaseModel):
     number: str
     customer_name: Optional[str] = ""
     customer_email: Optional[str] = ""
+    customer_phone: Optional[str] = ""
     items: List[OrderItem] = []
     total: float = 0
     status: str = "novo"
@@ -361,6 +365,7 @@ class Order(BaseModel):
 class OrderCreate(BaseModel):
     customer_name: Optional[str] = ""
     customer_email: Optional[str] = ""
+    customer_phone: Optional[str] = ""
     items: List[OrderItem] = []
     notes: Optional[str] = ""
     status: Optional[str] = "novo"
@@ -868,6 +873,31 @@ async def public_order(token: str, body: dict):
     await db.orders.insert_one(dict(order))
     order.pop("_id", None)
     return {"ok": True, "order": order, "mock": True}
+
+
+@api_router.post("/public/galleries/{token}/store-order")
+async def public_store_order(token: str, body: dict):
+    doc = await _get_by_token(token)
+    items = body.get("items", [])
+    if not items:
+        raise HTTPException(400, "Carrinho vazio")
+    count = await db.store_orders.count_documents({})
+    number = f"ENC-{datetime.now().year}-{count + 1:04d}"
+    obj = Order(number=number, customer_name=body.get("customer_name", ""), customer_email=body.get("customer_email", ""),
+                customer_phone=body.get("customer_phone", ""), items=items, total=order_total(items),
+                status="novo", notes=body.get("notes", ""))
+    order = obj.model_dump()
+    order["gallery_token"] = token
+    order["gallery_title"] = doc.get("title", "")
+    photos, seen = [], set()
+    for it in items:
+        u = it.get("photo_url", "")
+        if u and u not in seen:
+            seen.add(u)
+            photos.append({"name": it.get("photo_name", ""), "url": u})
+    order["photos"] = photos
+    await db.store_orders.insert_one(order)
+    return {"ok": True, "order": clean(order)}
 
 
 # ---------------- Calendar Events ----------------

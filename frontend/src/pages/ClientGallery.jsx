@@ -2,18 +2,19 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
-  Lock, Heart, CheckCircle2, XCircle, Aperture, ShoppingBag, Download, Sparkles, MessageSquare, Send, Loader2,
+  Lock, Heart, CheckCircle2, XCircle, Aperture, ShoppingBag, Download, Sparkles, MessageSquare, Send, Loader2, Plus, Minus, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, eur } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Lightbox } from "@/components/Lightbox";
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function ClientGallery() {
@@ -27,6 +28,14 @@ export default function ClientGallery() {
   const [products, setProducts] = useState([]);
   const [cart, setCart] = useState([]);
   const [comment, setComment] = useState("");
+  const [cartOpen, setCartOpen] = useState(false);
+  const [buyPhoto, setBuyPhoto] = useState(null);
+  const [buyProduct, setBuyProduct] = useState("");
+  const [buyQty, setBuyQty] = useState(1);
+  const [buyNotes, setBuyNotes] = useState("");
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [customer, setCustomer] = useState({ name: "", email: "", phone: "", notes: "" });
+  const [placing, setPlacing] = useState(false);
 
   const fetchGallery = async () => {
     setLoading(true);
@@ -55,11 +64,36 @@ export default function ClientGallery() {
     setGallery(r.data); setComment(""); toast.success("Comentário enviado");
   };
 
-  const addToCart = (product, photo) => { setCart((c) => [...c, { ...product, photo: photo?.name || "" }]); toast.success("Adicionado ao carrinho"); };
-  const cartTotal = cart.reduce((s, i) => s + i.price, 0);
-  const checkout = async () => {
-    await api.post(`/public/galleries/${token}/order`, { items: cart, total: cartTotal });
-    toast.success("Encomenda recebida! (pagamento simulado)"); setCart([]);
+  const openBuy = (photo) => { setBuyPhoto(photo); setBuyProduct(""); setBuyQty(1); setBuyNotes(""); };
+  const confirmAddToCart = () => {
+    const p = products.find((x) => x.id === buyProduct);
+    if (!p) return toast.error("Escolhe um produto");
+    const qty = Math.max(1, Number(buyQty) || 1);
+    setCart((c) => [...c, { product_id: p.id, name: p.name, price: p.price, quantity: qty, photo_name: buyPhoto?.name || "", photo_url: buyPhoto?.url || "", notes: buyNotes }]);
+    toast.success("Adicionado ao carrinho");
+    setBuyPhoto(null); setCartOpen(true);
+  };
+  const changeQty = (idx, delta) => setCart((c) => c.map((it, i) => i === idx ? { ...it, quantity: Math.max(1, it.quantity + delta) } : it));
+  const removeItem = (idx) => setCart((c) => c.filter((_, i) => i !== idx));
+  const subtotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
+  const itemCount = cart.reduce((s, i) => s + i.quantity, 0);
+
+  const openCheckout = () => {
+    setCustomer((c) => ({ ...c, name: c.name || gallery?.client_name || "" }));
+    setCheckoutOpen(true);
+  };
+  const finalizeOrder = async () => {
+    if (cart.length === 0) return toast.error("Carrinho vazio");
+    if (!customer.name.trim()) return toast.error("Indica o teu nome");
+    setPlacing(true);
+    try {
+      await api.post(`/public/galleries/${token}/store-order`, {
+        items: cart, customer_name: customer.name, customer_email: customer.email, customer_phone: customer.phone, notes: customer.notes,
+      });
+      toast.success("Pedido criado com sucesso!");
+      setCart([]); setCheckoutOpen(false); setCartOpen(false); setCustomer({ name: "", email: "", phone: "", notes: "" });
+    } catch { toast.error("Não foi possível finalizar o pedido"); }
+    finally { setPlacing(false); }
   };
 
   const downloadSelected = () => {
@@ -94,6 +128,10 @@ export default function ClientGallery() {
   if (filter === "featured") shown = photos.filter((p) => p.featured);
   const selectedCount = photos.filter((p) => p.client_selected).length;
 
+  const buyBtn = (p, size = "sm") => (
+    <Button size={size} data-testid={`lb-buy-${p.id}`} onClick={() => openBuy(p)} variant="outline" className="rounded-full gap-1.5"><ShoppingBag className="h-4 w-4" /> Adicionar produto</Button>
+  );
+
   const actionBar = (photo) => {
     const p = photos.find((x) => x.id === photo.id) || photo;
     return (
@@ -110,10 +148,7 @@ export default function ClientGallery() {
             <div className="flex gap-2 items-end"><Textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Escreva um comentário..." className="min-h-[60px]" data-testid="comment-input" /><Button data-testid="comment-send" onClick={() => sendComment(p.id)} size="icon" className="h-11 w-11 rounded-lg"><Send className="h-4 w-4" /></Button></div>
           </DialogContent>
         </Dialog>
-        <Select onValueChange={(v) => addToCart(products.find((x) => x.id === v), p)}>
-          <SelectTrigger data-testid={`lb-buy-${p.id}`} className="h-9 w-40 rounded-full"><ShoppingBag className="h-4 w-4 mr-1" /><SelectValue placeholder="Comprar" /></SelectTrigger>
-          <SelectContent>{products.map((pr) => <SelectItem key={pr.id} value={pr.id}>{pr.name} — {eur(pr.price)}</SelectItem>)}</SelectContent>
-        </Select>
+        {buyBtn(p)}
       </div>
     );
   };
@@ -127,19 +162,40 @@ export default function ClientGallery() {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" data-testid="download-selected-btn" onClick={downloadSelected} className="rounded-lg gap-2"><Download className="h-4 w-4" /> <span className="hidden sm:inline">Selecionadas</span> ({selectedCount})</Button>
-          <Sheet>
-            <SheetTrigger asChild><Button size="sm" data-testid="cart-btn" className="rounded-lg gap-2"><ShoppingBag className="h-4 w-4" /> {cart.length}</Button></SheetTrigger>
-            <SheetContent className="flex flex-col">
-              <SheetHeader><SheetTitle className="font-display font-medium">Carrinho</SheetTitle></SheetHeader>
-              {cart.length === 0 ? <p className="text-sm text-muted-foreground py-8 text-center">Carrinho vazio</p> : (
+          <Sheet open={cartOpen} onOpenChange={setCartOpen}>
+            <SheetTrigger asChild><Button size="sm" data-testid="cart-btn" className="rounded-lg gap-2"><ShoppingBag className="h-4 w-4" /> {itemCount}</Button></SheetTrigger>
+            <SheetContent className="flex flex-col w-full sm:max-w-md">
+              <SheetHeader><SheetTitle className="font-display font-medium">O teu carrinho</SheetTitle></SheetHeader>
+              {cart.length === 0 ? <p className="text-sm text-muted-foreground py-10 text-center">Carrinho vazio.<br />Escolhe uma foto e adiciona um produto.</p> : (
                 <>
-                  <div className="flex-1 overflow-y-auto space-y-2 py-4">{cart.map((it, i) => (
-                    <div key={i} className="flex items-center justify-between text-sm border border-border rounded-lg p-3"><div><p className="font-medium">{it.name}</p>{it.photo && <p className="text-xs text-muted-foreground">{it.photo}</p>}</div><div className="flex items-center gap-2"><span>{eur(it.price)}</span><Button variant="ghost" size="icon" onClick={() => setCart(cart.filter((_, j) => j !== i))} className="h-7 w-7 text-muted-foreground hover:text-destructive"><XCircle className="h-4 w-4" /></Button></div></div>
-                  ))}</div>
+                  <div className="flex-1 overflow-y-auto space-y-3 py-4" data-testid="cart-items">
+                    {cart.map((it, i) => (
+                      <div key={i} data-testid={`cart-item-${i}`} className="flex gap-3 border border-border rounded-xl p-3">
+                        {it.photo_url ? <img src={it.photo_url} alt="" className="h-16 w-16 rounded-lg object-cover shrink-0" /> : <div className="h-16 w-16 rounded-lg bg-secondary shrink-0" />}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="font-medium text-sm truncate">{it.name}</p>
+                            <Button variant="ghost" size="icon" data-testid={`cart-remove-${i}`} onClick={() => removeItem(i)} className="h-7 w-7 -mt-1 -mr-1 text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></Button>
+                          </div>
+                          {it.photo_name && <p className="text-[11px] text-muted-foreground truncate">Foto: {it.photo_name}</p>}
+                          {it.notes && <p className="text-[11px] text-muted-foreground italic truncate">"{it.notes}"</p>}
+                          <div className="flex items-center justify-between mt-2">
+                            <div className="flex items-center gap-1.5">
+                              <Button variant="outline" size="icon" data-testid={`cart-minus-${i}`} onClick={() => changeQty(i, -1)} className="h-7 w-7 rounded-full"><Minus className="h-3.5 w-3.5" /></Button>
+                              <span className="w-6 text-center text-sm" data-testid={`cart-qty-${i}`}>{it.quantity}</span>
+                              <Button variant="outline" size="icon" data-testid={`cart-plus-${i}`} onClick={() => changeQty(i, 1)} className="h-7 w-7 rounded-full"><Plus className="h-3.5 w-3.5" /></Button>
+                            </div>
+                            <span className="font-medium text-sm">{eur(it.price * it.quantity)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                   <div className="border-t border-border pt-4 space-y-3">
-                    <div className="flex justify-between font-display text-lg font-medium"><span>Total</span><span>{eur(cartTotal)}</span></div>
-                    <Button data-testid="checkout-btn" onClick={checkout} className="w-full rounded-lg">Finalizar encomenda</Button>
-                    <p className="text-[11px] text-muted-foreground text-center">Pagamento simulado (MOCK) — Stripe numa fase futura</p>
+                    <div className="flex justify-between text-sm text-muted-foreground"><span>Itens</span><span>{itemCount}</span></div>
+                    <div className="flex justify-between font-display text-lg font-medium"><span>Subtotal</span><span data-testid="cart-subtotal">{eur(subtotal)}</span></div>
+                    <Button data-testid="checkout-open-btn" onClick={openCheckout} className="w-full rounded-lg">Finalizar Pedido</Button>
+                    <p className="text-[11px] text-muted-foreground text-center">Sem pagamento online — o estúdio contacta-te para tratar do pagamento.</p>
                   </div>
                 </>
               )}
@@ -168,6 +224,7 @@ export default function ClientGallery() {
                 <div className="absolute bottom-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <Button variant="ghost" size="icon" data-testid={`grid-fav-${p.id}`} onClick={() => action(p.id, "favorite")} className={`h-8 w-8 bg-black/40 backdrop-blur text-white hover:text-rose-400 ${p.client_favorite ? "text-rose-400" : ""}`}><Heart className={`h-4 w-4 ${p.client_favorite ? "fill-current" : ""}`} /></Button>
                   <Button variant="ghost" size="icon" data-testid={`grid-select-${p.id}`} onClick={() => action(p.id, "select")} className={`h-8 w-8 bg-black/40 backdrop-blur text-white hover:text-primary ${p.client_selected ? "text-primary" : ""}`}><CheckCircle2 className="h-4 w-4" /></Button>
+                  <Button variant="ghost" size="icon" data-testid={`grid-buy-${p.id}`} onClick={() => openBuy(p)} className="h-8 w-8 bg-black/40 backdrop-blur text-white hover:text-primary"><ShoppingBag className="h-4 w-4" /></Button>
                 </div>
                 {(p.client_favorite || p.client_selected) && <div className="absolute bottom-2 left-2 flex gap-1">{p.client_favorite && <span className="h-6 w-6 rounded-full bg-rose-500/90 flex items-center justify-center text-white"><Heart className="h-3 w-3 fill-current" /></span>}{p.client_selected && <span className="h-6 w-6 rounded-full bg-primary flex items-center justify-center text-primary-foreground"><CheckCircle2 className="h-3 w-3" /></span>}</div>}
               </motion.div>
@@ -175,6 +232,50 @@ export default function ClientGallery() {
           </div>
         )}
       </main>
+
+      {/* Modal: adicionar produto para uma foto */}
+      <Dialog open={!!buyPhoto} onOpenChange={(o) => !o && setBuyPhoto(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle className="font-display font-medium">Adicionar produto</DialogTitle></DialogHeader>
+          {buyPhoto && (
+            <div className="space-y-4 py-1">
+              <img src={buyPhoto.url} alt={buyPhoto.name} className="w-full h-44 object-cover rounded-lg border border-border" />
+              <div>
+                <Label>Produto</Label>
+                <Select value={buyProduct} onValueChange={setBuyProduct}>
+                  <SelectTrigger data-testid="buy-product-select" className="h-11 mt-1.5"><SelectValue placeholder="Escolher produto..." /></SelectTrigger>
+                  <SelectContent>{products.map((pr) => <SelectItem key={pr.id} value={pr.id}>{pr.name} — {eur(pr.price)}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              {buyProduct && <p className="text-sm text-muted-foreground">Preço unitário: <span className="font-medium text-foreground">{eur(products.find((x) => x.id === buyProduct)?.price || 0)}</span></p>}
+              <div>
+                <Label>Quantidade</Label>
+                <Input type="number" min="1" data-testid="buy-qty-input" value={buyQty} onChange={(e) => setBuyQty(e.target.value)} className="h-11 mt-1.5 w-28" />
+              </div>
+              <div><Label>Observações</Label><Textarea data-testid="buy-notes-input" value={buyNotes} onChange={(e) => setBuyNotes(e.target.value)} className="mt-1.5" rows={2} placeholder="Ex: moldura preta, sem margem..." /></div>
+            </div>
+          )}
+          <DialogFooter><Button data-testid="add-to-cart-confirm" onClick={confirmAddToCart} className="rounded-lg gap-2"><ShoppingBag className="h-4 w-4" /> Adicionar ao carrinho</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Checkout */}
+      <Dialog open={checkoutOpen} onOpenChange={setCheckoutOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle className="font-display font-medium">Finalizar pedido</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-1">
+            <div><Label>Nome *</Label><Input data-testid="checkout-name" value={customer.name} onChange={(e) => setCustomer({ ...customer, name: e.target.value })} className="h-11 mt-1.5" /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Email</Label><Input data-testid="checkout-email" value={customer.email} onChange={(e) => setCustomer({ ...customer, email: e.target.value })} className="h-11 mt-1.5" /></div>
+              <div><Label>Telefone</Label><Input data-testid="checkout-phone" value={customer.phone} onChange={(e) => setCustomer({ ...customer, phone: e.target.value })} className="h-11 mt-1.5" /></div>
+            </div>
+            <div><Label>Notas</Label><Textarea data-testid="checkout-notes" value={customer.notes} onChange={(e) => setCustomer({ ...customer, notes: e.target.value })} className="mt-1.5" rows={2} /></div>
+            <div className="flex items-center justify-between font-display text-lg font-medium pt-2 border-t border-border"><span>Total</span><span data-testid="checkout-total">{eur(subtotal)}</span></div>
+            <p className="text-[11px] text-muted-foreground">Sem pagamento online nesta fase — o estúdio recebe o pedido e trata do pagamento contigo.</p>
+          </div>
+          <DialogFooter><Button data-testid="finalize-order-btn" disabled={placing} onClick={finalizeOrder} className="rounded-lg w-full">{placing ? "A processar..." : "Finalizar Pedido"}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {lightbox >= 0 && <Lightbox photos={photos} index={lightbox} onIndex={setLightbox} onClose={() => setLightbox(-1)} watermark={gallery.watermark} renderActions={actionBar} />}
     </div>

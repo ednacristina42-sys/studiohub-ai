@@ -1,0 +1,50 @@
+{
+  "summary": "Iteração 14 — Loja Fase 2 (Galeria Pública como loja) testada. Backend: 18/19 pytest verdes (test_iteration14). O novo POST /api/public/galleries/{token}/store-order funciona na perfeição: cria em store_orders com nº ENC-YYYY-XXXX, total calculado server-side, status 'novo', customer_phone, items com photo_name/photo_url/notes, array 'photos' deduplicado, gallery_title/gallery_token. Carrinho vazio → 400. Token inválido → 404. Pedido aparece em GET /store/orders e ?status=novo. Endpoint legacy /order (db.orders, mock) preservado. FALHA 1 backend: admin POST /api/store/orders NÃO persiste customer_phone (o handler create_order não passa customer_phone ao construir Order — linha 1246 server.py). E2E frontend na galeria pública /g/{access_token}: fluxo compra completo passou (grid-buy → modal produto → adicionar carrinho → +/- quantidade → checkout → finalize → toast sucesso → pedido ENC-2026-0004 visível em /loja). FALHAS FRONTEND críticas em StoreOrders.jsx: (1) botão 'view-order-{id}' ausente — o diálogo de detalhe (order-detail, order-photos) nunca abre; (2) componente <Badge> usado no diálogo de detalhe SEM import — quando/se o diálogo abrir, causará ReferenceError. Regressão gallery (favorite via PATCH) OK. Smoke de clients/sessions/invoices/receivables/payables/store-products/store-categories OK.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/store/orders", "issue": "handler create_order não passa customer_phone para o objeto Order (server.py L1246–1247); admin cria o pedido mas o telefone é sempre gravado como string vazia. GET/PUT/PATCH mantêm-se OK. Fluxo público /store-order (que testámos exaustivamente) já preenche corretamente porque usa Order(customer_phone=...) diretamente."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "StoreOrders.jsx", "issue": "Botão 'view-order-{id}' NÃO existe na tabela de pedidos. O estado 'viewing' e o <Dialog data-testid='order-detail'> estão declarados mas não há nenhum trigger a chamar setViewing(o). Requisito do problema statement não implementado — o admin não consegue abrir o detalhe (fotos compradas, telefone, galeria de origem, etc.).", "selector": "[data-testid^='view-order-']", "priority": "HIGH"},
+      {"component": "StoreOrders.jsx", "issue": "Componente <Badge> é utilizado na linha 193 (badge de estado no diálogo de detalhe) mas NÃO está importado — quando o diálogo for aberto (após correção do bug acima), gerará ReferenceError: Badge is not defined. Adicionar `import { Badge } from '@/components/ui/badge';`.", "selector": "N/A", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Admin Loja→Pedidos", "issues": ["Ícones de ações (edit/delete) usam opacity-0 md:group-hover:opacity-100 — em ecrãs grandes só aparecem no hover; a11y/UX débeis (utilizadores de teclado ou toque não veem que existem ações). Sugestão: mostrar sempre a coluna Ações."]},
+      {"screen": "ClientGallery Dialogs", "issues": ["Warnings React persistentes: Missing `Description` or `aria-describedby={undefined}` para DialogContent (modal Comentar, modal Adicionar Produto, modal Checkout). Não bloqueia mas polui a consola."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration14_store_order_from_gallery.py",
+    "/app/test_reports/pytest/iteration_14.xml"
+  ],
+  "action_items": [
+    "CORRIGIR StoreOrders.jsx: adicionar <Button data-testid={`view-order-${o.id}`} onClick={() => setViewing(o)}> com ícone Eye na coluna Ações (antes do edit-order).",
+    "CORRIGIR StoreOrders.jsx: adicionar `import { Badge } from '@/components/ui/badge';` (ou substituir <Badge> por <span> com as classes stMap).",
+    "CORRIGIR server.py L1246: adicionar `customer_phone=data.get('customer_phone', '')` na construção do Order dentro de create_order() e aceitar 'customer_phone' na lista de campos permitidos em update_order() (L1255).",
+    "(Opcional) Mostrar sempre a coluna Ações em desktop, remover o pattern md:opacity-0 md:group-hover:opacity-100.",
+    "(Opcional) Adicionar <DialogDescription> aos DialogContent do ClientGallery.jsx para eliminar warnings a11y."
+  ],
+  "critical_code_review_comments": [
+    "server.py chegou a 2150 linhas — refatorar em routers por domínio (public_gallery, store, gallery, financial, etc.) melhora manutenção significativamente.",
+    "create_order() em server.py (L1237-1250) esqueceu-se de propagar customer_phone; o modelo OrderCreate tem o campo mas o handler ignora-o. Fluxo público /store-order preserva o campo — inconsistência entre os dois handlers que partilham o mesmo modelo.",
+    "StoreOrders.jsx tem state 'viewing' + Dialog completo com data-testid='order-detail' e 'order-photos' PRONTOS, mas o trigger nunca foi cablado. Provável esquecimento de refactor.",
+    "public_store_order() (server.py L878) tem lógica de dedup de fotos (seen set) — boa. Mas usa count_documents({}) para gerar nº de encomenda, sujeito a race condition sob concorrência. Baixo risco em SaaS de fotógrafo, mas registar.",
+    "ClientGallery.jsx: `useEffect(() => { fetchGallery(); api.get('/store/products?active=true')... }, [token]);` — mantém uma dependência de token mas o array de produtos re-fetch em cada mount é aceitável.",
+    "Nenhum item do carrinho tem validação de stock (aceitável nesta fase — sem gestão de inventário).",
+    "Order.total é sempre recalculado no servidor via order_total() — correto (não confia no cliente)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration14_store_order_from_gallery.py (novo — 19 testes, 18 passaram)"
+  ],
+  "success_rate": {"backend": "94.7% (18/19 pytest)", "frontend": "70% — fluxo comprador na galeria 100%, admin detalhe do pedido 0% (botão ausente + Badge não importado)"},
+  "test_credentials": "Sem auth. Galeria seed 'Campanha Vinho Reserva' (id d1b3a5f2-...): sem password. Token via POST /api/galleries/{id}/share (campo access_token).",
+  "seed_data_creation": "Nenhum dado seed adicional criado. Pedidos TEST_* foram criados e limpos ao fim de cada teste. Pedido E2E do playwright (ENC-2026-0004, TEST Cliente E2E) foi removido no final.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Após E1 corrigir os 3 bugs (view-order button + Badge import em StoreOrders.jsx + customer_phone em create_order do server.py), retestar: (1) clicar view-order-{id} → diálogo order-detail abre, mostra telefone, galeria de origem, order-photos com miniaturas, produtos com photo_url/notas; (2) POST /store/orders com customer_phone → resposta e GET devolvem o telefone gravado. Fluxo galeria pública (finalize order) já está 100% validado — não precisa retestar. Base API = REACT_APP_BACKEND_URL + '/api'. Token de galeria pública = campo access_token (obter via POST /api/galleries/{id}/share). Galeria seed 'Campanha Vinho Reserva' NÃO tem password. STATES do pedido: novo/pago/em_producao/enviado/entregue/cancelado. ENC-YYYY-XXXX é sequencial (count_documents+1, atenção race). Preview URL: https://photo-studio-pro-31.preview.emergentagent.com.",
+  "rca of the issue": "BUG 1 (view-order missing): O componente StoreOrders.jsx declarou o estado `viewing`, importou o ícone `Eye`, e escreveu todo o <Dialog data-testid='order-detail'>, mas ficou esquecido de adicionar o <Button data-testid={`view-order-${o.id}`} onClick={()=>setViewing(o)}> dentro da célula 'Ações' da tabela (linhas 128-133). Reprodução: abrir /loja → tab Pedidos → não existe qualquer botão de olho. BUG 2 (Badge ausente): Import statement (linha 1-12) não inclui Badge; o uso na linha 193 estava provavelmente colado de outro ficheiro. Reprodução: após corrigir bug 1 e clicar view-order → 'Uncaught ReferenceError: Badge is not defined'. BUG 3 (customer_phone admin POST): função create_order (server.py L1237) faz `Order(customer_name=..., customer_email=..., items=..., ...)` sem incluir customer_phone. OrderCreate tem o campo, mas ao criar o Order este é sempre "". Reprodução: `curl -X POST .../api/store/orders -d '{...customer_phone:...}'` → resposta tem customer_phone:''. Mitigação: passar `customer_phone=data.get('customer_phone','')` na L1246."
+}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Trash2, Pencil, Search, Package, X } from "lucide-react";
+import { Plus, Trash2, Pencil, Search, Package, X, Eye } from "lucide-react";
 import { toast } from "sonner";
 import { api, eur, fmtDate } from "@/lib/api";
 import { Card } from "@/components/ui/card";
@@ -29,6 +29,7 @@ export default function StoreOrders() {
   const [filter, setFilter] = useState("todos");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [viewing, setViewing] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [newItem, setNewItem] = useState({ product: "", quantity: 1 });
 
@@ -178,6 +179,53 @@ export default function StoreOrders() {
             <div className="flex items-center justify-between font-display text-lg font-medium pt-2 border-t border-border"><span>Total</span><span data-testid="order-total">{eur(formTotal)}</span></div>
           </div>
           <DialogFooter><Button data-testid="save-order-btn" onClick={save} className="rounded-lg">Guardar</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Detalhe do pedido (read-only) */}
+      <Dialog open={!!viewing} onOpenChange={(o) => !o && setViewing(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader><DialogTitle className="font-display font-medium">{viewing?.number}</DialogTitle></DialogHeader>
+          {viewing && (
+            <div className="space-y-4 py-1 max-h-[70vh] overflow-y-auto" data-testid="order-detail">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div><p className="text-xs text-muted-foreground">Cliente</p><p className="font-medium">{viewing.customer_name || "—"}</p></div>
+                <div><p className="text-xs text-muted-foreground">Estado</p><Badge variant="outline" className={`rounded-full text-xs ${(stMap[viewing.status] || STATES[0]).cls}`}>{(stMap[viewing.status] || STATES[0]).label}</Badge></div>
+                <div><p className="text-xs text-muted-foreground">Email</p><p>{viewing.customer_email || "—"}</p></div>
+                <div><p className="text-xs text-muted-foreground">Telefone</p><p>{viewing.customer_phone || "—"}</p></div>
+                {viewing.gallery_title && <div className="col-span-2"><p className="text-xs text-muted-foreground">Galeria</p><p>{viewing.gallery_title}</p></div>}
+              </div>
+
+              {viewing.photos?.length > 0 && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1.5">Fotos compradas ({viewing.photos.length})</p>
+                  <div className="flex gap-2 flex-wrap" data-testid="order-photos">
+                    {viewing.photos.map((ph, i) => <img key={i} src={ph.url} alt={ph.name} title={ph.name} className="h-16 w-16 rounded-lg object-cover border border-border" />)}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <p className="text-xs text-muted-foreground mb-1.5">Produtos</p>
+                <div className="space-y-2">
+                  {(viewing.items || []).map((it, i) => (
+                    <div key={i} className="flex items-center gap-3 border border-border rounded-lg p-2.5 text-sm">
+                      {it.photo_url && <img src={it.photo_url} alt="" className="h-10 w-10 rounded object-cover shrink-0" />}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{it.quantity}× {it.name}</p>
+                        {it.notes && <p className="text-[11px] text-muted-foreground italic truncate">"{it.notes}"</p>}
+                      </div>
+                      <span className="font-medium whitespace-nowrap">{eur(it.price * it.quantity)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {viewing.notes && <div><p className="text-xs text-muted-foreground">Observações</p><p className="text-sm">{viewing.notes}</p></div>}
+
+              <div className="flex items-center justify-between font-display text-lg font-medium pt-2 border-t border-border"><span>Total</span><span>{eur(viewing.total)}</span></div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

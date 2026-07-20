@@ -313,6 +313,7 @@ class Product(BaseModel):
     category: Optional[str] = ""
     price: float = 0
     image_url: Optional[str] = ""
+    sku: Optional[str] = ""
     active: bool = True
     created_at: str = Field(default_factory=now_iso)
 
@@ -323,13 +324,46 @@ class ProductCreate(BaseModel):
     category: Optional[str] = ""
     price: float = 0
     image_url: Optional[str] = ""
+    sku: Optional[str] = ""
     active: bool = True
 
 
 class StoreCategory(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
+    description: Optional[str] = ""
+    active: bool = True
     created_at: str = Field(default_factory=now_iso)
+
+
+ORDER_STATES = ["novo", "pago", "em_producao", "enviado", "entregue", "cancelado"]
+
+
+class OrderItem(BaseModel):
+    product_id: Optional[str] = ""
+    name: str
+    price: float = 0
+    quantity: int = 1
+
+
+class Order(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    number: str
+    customer_name: Optional[str] = ""
+    customer_email: Optional[str] = ""
+    items: List[OrderItem] = []
+    total: float = 0
+    status: str = "novo"
+    notes: Optional[str] = ""
+    created_at: str = Field(default_factory=now_iso)
+
+
+class OrderCreate(BaseModel):
+    customer_name: Optional[str] = ""
+    customer_email: Optional[str] = ""
+    items: List[OrderItem] = []
+    notes: Optional[str] = ""
+    status: Optional[str] = "novo"
 
 
 class Quote(BaseModel):
@@ -1068,9 +1102,30 @@ async def create_store_category(body: dict):
     existing = await db.store_categories.find_one({"name": name}, {"_id": 0})
     if existing:
         return existing
-    obj = StoreCategory(name=name)
+    obj = StoreCategory(name=name, description=body.get("description", ""), active=body.get("active", True))
     await db.store_categories.insert_one(obj.model_dump())
     return clean(obj.model_dump())
+
+
+@api_router.put("/store/categories/{cid}")
+async def update_store_category(cid: str, body: dict):
+    fields = {k: body[k] for k in ["name", "description", "active"] if k in body}
+    await db.store_categories.update_one({"id": cid}, {"$set": fields})
+    doc = await db.store_categories.find_one({"id": cid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Categoria não encontrada")
+    return doc
+
+
+@api_router.patch("/store/categories/{cid}/toggle")
+async def toggle_store_category(cid: str):
+    doc = await db.store_categories.find_one({"id": cid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Categoria não encontrada")
+    new_active = not doc.get("active", True)
+    await db.store_categories.update_one({"id": cid}, {"$set": {"active": new_active}})
+    doc["active"] = new_active
+    return doc
 
 
 @api_router.delete("/store/categories/{cid}")
@@ -1103,7 +1158,7 @@ async def create_product(payload: ProductCreate):
 
 @api_router.put("/store/products/{pid}")
 async def update_product(pid: str, body: dict):
-    fields = {k: body[k] for k in ["name", "description", "category", "price", "image_url", "active"] if k in body}
+    fields = {k: body[k] for k in ["name", "description", "category", "price", "image_url", "sku", "active"] if k in body}
     if "price" in fields:
         fields["price"] = max(float(fields["price"] or 0), 0)
     await db.products.update_one({"id": pid}, {"$set": fields})
@@ -1127,6 +1182,73 @@ async def toggle_product(pid: str):
 @api_router.delete("/store/products/{pid}")
 async def delete_product(pid: str):
     await db.products.delete_one({"id": pid})
+    return {"ok": True}
+
+
+# ---------------- Loja: Pedidos (Orders) ----------------
+def order_total(items):
+    return round(sum((i.get("price", 0) or 0) * (i.get("quantity", 1) or 1) for i in items), 2)
+
+
+@api_router.get("/store/orders/states")
+async def order_states():
+    return ORDER_STATES
+
+
+@api_router.get("/store/orders")
+async def list_orders(status: str = ""):
+    query = {}
+    if status:
+        query["status"] = status
+    docs = await db.store_orders.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return docs
+
+
+@api_router.post("/store/orders")
+async def create_order(payload: OrderCreate):
+    data = payload.model_dump()
+    items = data.get("items", [])
+    count = await db.store_orders.count_documents({})
+    number = f"ENC-{datetime.now().year}-{count + 1:04d}"
+    status = data.get("status") or "novo"
+    if status not in ORDER_STATES:
+        status = "novo"
+    obj = Order(number=number, customer_name=data.get("customer_name", ""), customer_email=data.get("customer_email", ""),
+                items=items, total=order_total(items), status=status, notes=data.get("notes", ""))
+    doc = obj.model_dump()
+    await db.store_orders.insert_one(doc)
+    return clean(doc)
+
+
+@api_router.put("/store/orders/{oid}")
+async def update_order(oid: str, body: dict):
+    fields = {k: body[k] for k in ["customer_name", "customer_email", "items", "notes", "status"] if k in body}
+    if "items" in fields:
+        fields["total"] = order_total(fields["items"])
+    if "status" in fields and fields["status"] not in ORDER_STATES:
+        raise HTTPException(400, "Estado inválido")
+    await db.store_orders.update_one({"id": oid}, {"$set": fields})
+    doc = await db.store_orders.find_one({"id": oid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Pedido não encontrado")
+    return doc
+
+
+@api_router.patch("/store/orders/{oid}/status")
+async def update_order_status(oid: str, body: dict):
+    status = body.get("status", "")
+    if status not in ORDER_STATES:
+        raise HTTPException(400, "Estado inválido")
+    await db.store_orders.update_one({"id": oid}, {"$set": {"status": status}})
+    doc = await db.store_orders.find_one({"id": oid}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Pedido não encontrado")
+    return doc
+
+
+@api_router.delete("/store/orders/{oid}")
+async def delete_order(oid: str):
+    await db.store_orders.delete_one({"id": oid})
     return {"ok": True}
 
 
@@ -1342,14 +1464,27 @@ async def seed():
     await db.store_categories.insert_many([StoreCategory(name=n).model_dump() for n in store_categories])
 
     products = [
-        {"id": str(uuid.uuid4()), "name": "Impressão Fine Art 30x40", "description": "Impressão premium em papel Hahnemühle.", "category": "Impressões", "price": 35, "image_url": imgs[0], "active": True, "created_at": now_iso()},
-        {"id": str(uuid.uuid4()), "name": "Álbum Luxo 30x30 (20 páginas)", "description": "Álbum capa dura com acabamento em linho.", "category": "Álbuns", "price": 180, "image_url": imgs[2], "active": True, "created_at": now_iso()},
-        {"id": str(uuid.uuid4()), "name": "Moldura de Madeira 20x30", "description": "Moldura artesanal com vidro anti-reflexo.", "category": "Molduras", "price": 45, "image_url": imgs[3], "active": True, "created_at": now_iso()},
-        {"id": str(uuid.uuid4()), "name": "Canvas 40x60", "description": "Tela esticada em bastidor de madeira.", "category": "Canvas", "price": 90, "image_url": imgs[4], "active": True, "created_at": now_iso()},
-        {"id": str(uuid.uuid4()), "name": "Pack Digital — 10 fotos editadas", "description": "Ficheiros em alta resolução para download.", "category": "Ficheiros Digitais", "price": 60, "image_url": imgs[1], "active": True, "created_at": now_iso()},
-        {"id": str(uuid.uuid4()), "name": "Pack Casamento Completo", "description": "Álbum + 2 canvas + galeria digital.", "category": "Packs", "price": 450, "image_url": imgs[5], "active": False, "created_at": now_iso()},
+        {"id": str(uuid.uuid4()), "name": "Impressão Fine Art 30x40", "description": "Impressão premium em papel Hahnemühle.", "category": "Impressões", "price": 35, "image_url": imgs[0], "sku": "IMP-3040", "active": True, "created_at": now_iso()},
+        {"id": str(uuid.uuid4()), "name": "Álbum Luxo 30x30 (20 páginas)", "description": "Álbum capa dura com acabamento em linho.", "category": "Álbuns", "price": 180, "image_url": imgs[2], "sku": "ALB-3030", "active": True, "created_at": now_iso()},
+        {"id": str(uuid.uuid4()), "name": "Moldura de Madeira 20x30", "description": "Moldura artesanal com vidro anti-reflexo.", "category": "Molduras", "price": 45, "image_url": imgs[3], "sku": "MOL-2030", "active": True, "created_at": now_iso()},
+        {"id": str(uuid.uuid4()), "name": "Canvas 40x60", "description": "Tela esticada em bastidor de madeira.", "category": "Canvas", "price": 90, "image_url": imgs[4], "sku": "CAN-4060", "active": True, "created_at": now_iso()},
+        {"id": str(uuid.uuid4()), "name": "Pack Digital — 10 fotos editadas", "description": "Ficheiros em alta resolução para download.", "category": "Ficheiros Digitais", "price": 60, "image_url": imgs[1], "sku": "DIG-PK10", "active": True, "created_at": now_iso()},
+        {"id": str(uuid.uuid4()), "name": "Pack Casamento Completo", "description": "Álbum + 2 canvas + galeria digital.", "category": "Packs", "price": 450, "image_url": imgs[5], "sku": "PACK-WED", "active": False, "created_at": now_iso()},
     ]
     await db.products.insert_many(products)
+
+    store_orders = [
+        {"id": str(uuid.uuid4()), "number": "ENC-2026-0001", "customer_name": "Ana & Rui Ferreira", "customer_email": "ana.rui@email.pt",
+         "items": [{"product_id": "", "name": "Álbum Luxo 30x30 (20 páginas)", "price": 180, "quantity": 1}, {"product_id": "", "name": "Canvas 40x60", "price": 90, "quantity": 2}],
+         "total": 360, "status": "pago", "notes": "Entregar até ao fim do mês.", "created_at": now_iso()},
+        {"id": str(uuid.uuid4()), "number": "ENC-2026-0002", "customer_name": "Beatriz Costa", "customer_email": "beatriz.c@email.pt",
+         "items": [{"product_id": "", "name": "Impressão Fine Art 30x40", "price": 35, "quantity": 3}],
+         "total": 105, "status": "novo", "notes": "", "created_at": now_iso()},
+        {"id": str(uuid.uuid4()), "number": "ENC-2026-0003", "customer_name": "João Marques", "customer_email": "joao.m@email.pt",
+         "items": [{"product_id": "", "name": "Moldura de Madeira 20x30", "price": 45, "quantity": 1}],
+         "total": 45, "status": "enviado", "notes": "", "created_at": now_iso()},
+    ]
+    await db.store_orders.insert_many(store_orders)
 
     return {"seeded": True}
 

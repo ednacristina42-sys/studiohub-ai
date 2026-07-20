@@ -1,0 +1,43 @@
+{
+  "summary": "Iteração 13 — Loja Online (Fase 1 estendida) validada: novo módulo Pedidos (store_orders), SKU nos produtos, e Categorias com description/active + PUT/toggle. Backend: 20/20 novos testes pytest verdes + 18/18 do iteration_12 verdes (regressão limpa) = 38/38. Frontend Playwright: 3 tabs em /loja (produtos/categorias/pedidos), CRUD completo de produtos com SKU, CRUD de categorias com toggle, tabela de pedidos com nº ENC-YYYY-XXXX, labels PT (Novo/Pago/Em Produção/Enviado/Entregue/Cancelado), alteração de estado inline funcional, criação/edição/eliminação de pedidos, cálculo automático de total no formulário (120,00 €), filtros e pesquisa a funcionar. Regressão da galeria pública /g/:token: lb-buy mostra 5 produtos ativos e item foi adicionado ao carrinho com sucesso. Checkout MOCK /public/galleries/{token}/order validado por pytest e retornou {ok:true, mock:true}. Smoke de /clientes, /sessoes, /galerias, /financeiro, /invoices, /quotes, /contracts, /events sem quebras. db.store_orders está isolada de db.orders (checkout da galeria) — confirmado.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Store & ClientGallery Dialog", "issues": ["Warning React (a11y, não bloqueia funcionamento): Missing `Description` ou `aria-describedby={undefined}` em DialogContent — presente nos modais de Produto, Categoria e Pedido."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration13_store_orders.py",
+    "/app/backend/tests/test_iteration12_store.py",
+    "/app/test_reports/pytest/iteration_13.xml"
+  ],
+  "action_items": [
+    "(Opcional a11y) Adicionar <DialogDescription> ou aria-describedby aos DialogContent de StoreProducts.jsx, StoreCategories.jsx e StoreOrders.jsx para eliminar warnings de acessibilidade.",
+    "(Conhecido, não bug) Categorias eliminadas não desassociam produtos que as referenciam por nome — comportamento aceite nesta fase."
+  ],
+  "critical_code_review_comments": [
+    "server.py — atingiu ~2119 linhas. Recomenda-se dividir em routers por domínio (store, financial, gallery, etc.) numa refactor futura para melhorar manutenção.",
+    "Endpoint POST /store/orders faz fallback silencioso de status inválido para 'novo' (linha 1213-1215) — comportamento razoável no create, mas divergente do PUT/PATCH que rejeita com 400. Considerar retornar 400 também no POST para consistência.",
+    "order_total() usa arredondamento a 2 casas — correto para EUR.",
+    "GET /store/orders?status= com string vazia devolve todos (query vazia) — comportamento OK.",
+    "GET /store/orders/states devolve list constante (ORDER_STATES) — perfeito para o frontend construir seletores dinâmicos, mas o Frontend (StoreOrders.jsx) hardcoda os states em vez de consumir /states. Trade-off aceite (labels PT são no frontend).",
+    "Todos os retornos de MongoDB usam projeção {_id:0} e Order fields são serializados via clean(). ✅",
+    "PATCH /store/categories/{id}/toggle e PATCH /store/products/{id}/toggle têm 404 correto quando doc não existe. ✅",
+    "Modelos Order e OrderCreate têm campos consistentes; total é calculado do lado servidor (não confia no cliente). ✅"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration13_store_orders.py (novo — 20 testes)"
+  ],
+  "success_rate": {"backend": "100% (20/20 novos + 18/18 legacy = 38/38)", "frontend": "100% dos fluxos-chave"},
+  "test_credentials": "Sem auth na app do fotógrafo (mesma da iter 12). Portal cliente (não testado nesta iter): ana.rui@email.pt / cliente123.",
+  "seed_data_creation": "Auto-seed já idempotente. Confirmado: 6 categorias, 6 produtos (5 ativos + 'Pack Casamento Completo' inativo) com SKUs (IMP-3040, ALB-3030, MOL-2030, CAN-4060, DIG-PK10, PACK-WED), 3 pedidos (ENC-2026-0001/0002/0003) com estados pago/novo/enviado. Dados de teste TEST_* criados e limpos automaticamente pelos testes.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Module Loja Online agora completo: tabs em /loja (produtos, categorias, pedidos). data-testids importantes: tab-produtos/categorias/pedidos, product-card-{id} com SKU visível, order-row-{id}, order-status-{id} (Select inline). Formulário de pedido calcula total client-side (form.items reduce) e o servidor recalcula em POST/PUT via order_total(). db.store_orders é independente de db.orders (galeria). ORDER_STATES fixo em ['novo','pago','em_producao','enviado','entregue','cancelado']. Frontend hardcoda labels PT em STATES const em StoreOrders.jsx. Token público de galeria continua no campo 'access_token'. Preview URL: https://photo-studio-pro-31.preview.emergentagent.com. Base API = REACT_APP_BACKEND_URL + '/api'.",
+  "rca of the issue": "N/A — nenhum bug bloqueante encontrado. Apenas warnings de acessibilidade nos DialogContent (React Radix a11y guideline) já reportados em iter 12."
+}

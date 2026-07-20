@@ -109,14 +109,17 @@ export default function Galleries() {
                       <span className="flex items-center gap-1 truncate"><User className="h-3.5 w-3.5" />{g.client_name || "—"}</span>
                       <span className="flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5" />{fmtDate(g.date || g.created_at)}</span>
                     </div>
-                    <div className="flex items-center justify-between mt-3">
+                    <div className="mt-3 space-y-2">
                       <div className="flex items-center gap-1.5">
                         <Badge variant="secondary" className="rounded-full text-xs">{g.photos?.length || 0} fotos</Badge>
                         {selected > 0 && <Badge className="rounded-full bg-primary/10 text-primary border border-primary/20 text-xs">{selected} selec.</Badge>}
                       </div>
-                      <div className="flex items-center gap-1">
-                        <Link to={`/galerias/${g.id}`}><Button size="sm" data-testid={`gallery-open-${g.id}`} className="h-8 rounded-lg gap-1">Abrir <ArrowUpRight className="h-3.5 w-3.5" /></Button></Link>
-                        <Button variant="ghost" size="icon" data-testid={`delete-gallery-${g.id}`} onClick={(e) => remove(e, g.id)} className="h-8 w-8 text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4" /></Button>
+                      <div className="flex items-center gap-1.5">
+                        <Link to={`/galerias/${g.id}`} className="flex-1"><Button variant="outline" size="sm" data-testid={`gallery-manage-${g.id}`} className="h-8 w-full rounded-lg">Gerir</Button></Link>
+                        {g.access_token && (
+                          <Button size="sm" data-testid={`gallery-view-client-${g.id}`} onClick={() => window.open(`/g/${g.access_token}`, "_blank", "noopener")} className="h-8 flex-1 rounded-lg gap-1">Ver como cliente <ArrowUpRight className="h-3.5 w-3.5" /></Button>
+                        )}
+                        <Button variant="ghost" size="icon" data-testid={`delete-gallery-${g.id}`} onClick={(e) => remove(e, g.id)} className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4" /></Button>
                       </div>
                     </div>
                   </div>

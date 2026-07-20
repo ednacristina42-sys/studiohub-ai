@@ -21,6 +21,12 @@ const STATES = [
   { value: "cancelado", label: "Cancelado", cls: "bg-rose-500/10 text-rose-500 border-rose-500/20" },
 ];
 const stMap = Object.fromEntries(STATES.map((s) => [s.value, s]));
+const PAYMENT = {
+  pending: { label: "Pendente", cls: "bg-amber-500/10 text-amber-500 border-amber-500/20" },
+  paid: { label: "Pago", cls: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" },
+  failed: { label: "Falhou", cls: "bg-rose-500/10 text-rose-500 border-rose-500/20" },
+  refunded: { label: "Reembolsado", cls: "bg-slate-500/10 text-slate-500 border-slate-500/20" },
+};
 const emptyForm = { customer_name: "", customer_email: "", notes: "", status: "novo", items: [] };
 
 export default function StoreOrders() {
@@ -127,7 +133,7 @@ export default function StoreOrders() {
                       </Select>
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center justify-end gap-1">
                         <Button variant="ghost" size="icon" data-testid={`view-order-${o.id}`} onClick={() => setViewing(o)} className="h-8 w-8 text-muted-foreground hover:text-primary"><Eye className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" data-testid={`edit-order-${o.id}`} onClick={() => openEdit(o)} className="h-8 w-8 text-muted-foreground hover:text-primary"><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" data-testid={`delete-order-${o.id}`} onClick={() => remove(o.id)} className="h-8 w-8 text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4" /></Button>
@@ -192,10 +198,13 @@ export default function StoreOrders() {
             <div className="space-y-4 py-1 max-h-[70vh] overflow-y-auto" data-testid="order-detail">
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div><p className="text-xs text-muted-foreground">Cliente</p><p className="font-medium">{viewing.customer_name || "—"}</p></div>
-                <div><p className="text-xs text-muted-foreground">Estado</p><Badge variant="outline" className={`rounded-full text-xs ${(stMap[viewing.status] || STATES[0]).cls}`}>{(stMap[viewing.status] || STATES[0]).label}</Badge></div>
+                <div><p className="text-xs text-muted-foreground">Estado operacional</p><Badge variant="outline" className={`rounded-full text-xs ${(stMap[viewing.status] || STATES[0]).cls}`}>{(stMap[viewing.status] || STATES[0]).label}</Badge></div>
                 <div><p className="text-xs text-muted-foreground">Email</p><p>{viewing.customer_email || "—"}</p></div>
                 <div><p className="text-xs text-muted-foreground">Telefone</p><p>{viewing.customer_phone || "—"}</p></div>
+                <div data-testid="order-payment-status"><p className="text-xs text-muted-foreground">Pagamento</p><Badge variant="outline" className={`rounded-full text-xs ${(PAYMENT[viewing.payment_status] || PAYMENT.pending).cls}`}>{(PAYMENT[viewing.payment_status] || PAYMENT.pending).label}</Badge></div>
+                <div><p className="text-xs text-muted-foreground">Data de pagamento</p><p>{viewing.paid_at ? fmtDate(viewing.paid_at) : "—"}</p></div>
                 {viewing.gallery_title && <div className="col-span-2"><p className="text-xs text-muted-foreground">Galeria</p><p>{viewing.gallery_title}</p></div>}
+                {viewing.stripe_session_id && <div className="col-span-2"><p className="text-xs text-muted-foreground">Stripe Session ID</p><p className="font-mono text-[11px] break-all" data-testid="order-stripe-session">{viewing.stripe_session_id}</p></div>}
               </div>
 
               {viewing.photos?.length > 0 && (

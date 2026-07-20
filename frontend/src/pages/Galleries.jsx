@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
-import { Plus, Images, ImageIcon, ArrowUpRight, Trash2, Lock, CalendarDays, User } from "lucide-react";
+import { Plus, Images, ImageIcon, ArrowUpRight, Trash2, Lock, CalendarDays, User, Share2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, fmtDate } from "@/lib/api";
 import { Card } from "@/components/ui/card";
@@ -42,6 +42,19 @@ export default function Galleries() {
     setOpen(false); setForm(empty); load();
   };
   const remove = async (e, id) => { e.preventDefault(); await api.delete(`/galleries/${id}`); toast.success("Galeria removida"); load(); };
+  const [sharing, setSharing] = useState(null);
+  const share = async (id) => {
+    setSharing(id);
+    try {
+      const r = await api.post(`/galleries/${id}/share`);
+      const updated = r.data;
+      setGalleries((gs) => gs.map((g) => (g.id === id ? { ...g, ...updated } : g)));
+      toast.success("Link público gerado");
+      if (updated?.access_token) window.open(`/g/${updated.access_token}`, "_blank", "noopener");
+    } catch {
+      toast.error("Não foi possível gerar o link");
+    } finally { setSharing(null); }
+  };
 
   return (
     <div className="space-y-6">
@@ -97,6 +110,7 @@ export default function Galleries() {
                       {g.cover ? <img src={g.cover} alt={g.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" /> : <div className="h-full flex items-center justify-center text-muted-foreground"><ImageIcon className="h-10 w-10" /></div>}
                       <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
                       <Badge className={`absolute top-3 left-3 rounded-full border capitalize ${statusColor[g.status] || ""}`}>{g.status}</Badge>
+                      <Badge data-testid={`gallery-share-badge-${g.id}`} className={`absolute top-3 left-1/2 -translate-x-1/2 rounded-full border text-[10px] ${g.access_token ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" : "bg-slate-500/20 text-slate-200 border-slate-400/30"}`}>{g.access_token ? "Partilhada" : "Não partilhada"}</Badge>
                       {g.password && <span className="absolute top-3 right-3 h-7 w-7 rounded-full bg-black/50 backdrop-blur flex items-center justify-center text-white" title="Protegida"><Lock className="h-3.5 w-3.5" /></span>}
                       <div className="absolute bottom-3 left-4 right-4">
                         <p className="text-[10px] uppercase tracking-wider text-white/70 font-semibold">{g.type}</p>
@@ -116,8 +130,10 @@ export default function Galleries() {
                       </div>
                       <div className="flex items-center gap-1.5">
                         <Link to={`/galerias/${g.id}`} className="flex-1"><Button variant="outline" size="sm" data-testid={`gallery-manage-${g.id}`} className="h-8 w-full rounded-lg">Gerir</Button></Link>
-                        {g.access_token && (
+                        {g.access_token ? (
                           <Button size="sm" data-testid={`gallery-view-client-${g.id}`} onClick={() => window.open(`/g/${g.access_token}`, "_blank", "noopener")} className="h-8 flex-1 rounded-lg gap-1">Ver como cliente <ArrowUpRight className="h-3.5 w-3.5" /></Button>
+                        ) : (
+                          <Button size="sm" data-testid={`gallery-share-${g.id}`} disabled={sharing === g.id} onClick={() => share(g.id)} className="h-8 flex-1 rounded-lg gap-1">{sharing === g.id ? "A gerar..." : <>Partilhar e gerar link <Share2 className="h-3.5 w-3.5" /></>}</Button>
                         )}
                         <Button variant="ghost" size="icon" data-testid={`delete-gallery-${g.id}`} onClick={(e) => remove(e, g.id)} className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4" /></Button>
                       </div>

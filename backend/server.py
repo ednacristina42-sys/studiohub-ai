@@ -35,6 +35,11 @@ JWT_ALG = "HS256"
 stripe.api_key = os.environ.get('STRIPE_SECRET_KEY') or 'sk_test_emergent'
 STRIPE_WEBHOOK_SECRET = os.environ.get('STRIPE_WEBHOOK_SECRET', '')
 
+EMAIL_BASE_URL = "https://integrations.emergentagent.com"
+EMERGENT_EMAIL_KEY = os.environ.get('EMERGENT_EMAIL_KEY', '')
+EMAIL_FROM_NAME = os.environ.get('EMAIL_FROM_NAME', 'StudioHub AI')
+PHOTOGRAPHER_EMAIL = os.environ.get('PHOTOGRAPHER_EMAIL', '')
+
 
 def hash_password(pw: str) -> str:
     return bcrypt.hashpw(pw.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
@@ -369,6 +374,7 @@ class Order(BaseModel):
     paid_at: Optional[str] = ""
     currency: Optional[str] = "eur"
     amount: Optional[float] = 0
+    history: List[dict] = []
     created_at: str = Field(default_factory=now_iso)
 
 
@@ -885,6 +891,118 @@ async def public_order(token: str, body: dict):
     return {"ok": True, "order": order, "mock": True}
 
 
+# ---------------- Fase 4: Automação Pós-Venda (helpers) ----------------
+def fmt_eur(v):
+    try:
+        return f"{float(v or 0):.2f} €"
+    except Exception:
+        return "0.00 €"
+
+
+async def send_email_raw(to: str, subject: str, html: str) -> bool:
+    if not EMERGENT_EMAIL_KEY or not to:
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=30) as c:
+            r = await c.post(f"{EMAIL_BASE_URL}/api/v1/email/send",
+                             headers={"X-Email-Key": EMERGENT_EMAIL_KEY},
+                             json={"to": [to], "subject": subject, "html": html, "from_name": EMAIL_FROM_NAME})
+        r.raise_for_status()
+        return True
+    except Exception as e:
+        logging.error(f"[EMAIL] falha ao enviar para {to}: {e}")
+        return False
+
+
+async def create_notification(ntype: str, title: str, message: str, order_id: str = ""):
+    await db.notifications.insert_one({
+        "id": str(uuid.uuid4()), "type": ntype, "title": title, "message": message,
+        "order_id": order_id, "read": False, "created_at": now_iso(),
+    })
+
+
+async def create_activity(atype: str, message: str, client_name: str = "", order_id: str = ""):
+    await db.activities.insert_one({
+        "id": str(uuid.uuid4()), "type": atype, "message": message,
+        "client_name": client_name, "order_id": order_id, "created_at": now_iso(),
+    })
+
+
+async def order_history(oid: str, message: str):
+    await db.store_orders.update_one({"id": oid}, {"$push": {"history": {"ts": now_iso(), "message": message}}})
+
+
+def _order_email_customer(order):
+    rows = "".join(
+        f"<tr><td style='padding:6px 0;color:#333'>{it.get('quantity',1)}× {it.get('name','')}</td>"
+        f"<td style='padding:6px 0;text-align:right;color:#333'>{fmt_eur((it.get('price',0) or 0)*(it.get('quantity',1) or 1))}</td></tr>"
+        for it in order.get("items", []))
+    return f"""
+    <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto">
+      <h2 style="color:#111">Pagamento recebido</h2>
+      <p style="color:#333">Obrigado pela sua compra. O seu pedido foi confirmado.</p>
+      <table style="width:100%;border-collapse:collapse;margin-top:16px">
+        <tr><td style="color:#888">Número</td><td style="text-align:right;color:#111"><b>{order.get('number','')}</b></td></tr>
+        <tr><td style="color:#888">Data</td><td style="text-align:right;color:#111">{(order.get('paid_at') or '')[:10]}</td></tr>
+      </table>
+      <hr style="border:none;border-top:1px solid #eee;margin:16px 0">
+      <table style="width:100%;border-collapse:collapse">{rows}</table>
+      <hr style="border:none;border-top:1px solid #eee;margin:16px 0">
+      <table style="width:100%"><tr><td style="color:#111"><b>Total</b></td><td style="text-align:right;color:#111"><b>{fmt_eur(order.get('total',0))}</b></td></tr></table>
+    </div>"""
+
+
+def _order_email_photographer(order):
+    return f"""
+    <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto">
+      <h2 style="color:#111">Novo pedido pago</h2>
+      <table style="width:100%;border-collapse:collapse;margin-top:12px">
+        <tr><td style="color:#888">Cliente</td><td style="text-align:right;color:#111">{order.get('customer_name','—')}</td></tr>
+        <tr><td style="color:#888">Valor</td><td style="text-align:right;color:#111"><b>{fmt_eur(order.get('total',0))}</b></td></tr>
+        <tr><td style="color:#888">Galeria</td><td style="text-align:right;color:#111">{order.get('gallery_title','—')}</td></tr>
+        <tr><td style="color:#888">Pedido</td><td style="text-align:right;color:#111">{order.get('number','')}</td></tr>
+      </table>
+    </div>"""
+
+
+async def run_paid_automation(session_id: str):
+    order = await db.store_orders.find_one({"stripe_session_id": session_id})
+    if not order:
+        return
+    # Idempotência atómica: só corre uma vez por pedido
+    res = await db.store_orders.update_one(
+        {"id": order["id"], "automation_done": {"$ne": True}}, {"$set": {"automation_done": True}})
+    if res.modified_count == 0:
+        return
+    oid = order["id"]; number = order.get("number", ""); total = order.get("total", 0) or 0
+    cname = order.get("customer_name") or "Cliente"
+    paid_at = order.get("paid_at") or now_iso()
+    await order_history(oid, "Pagamento confirmado pelo Stripe.")
+    # 1) Receita automática (Financeiro)
+    rec = Receivable(client_name=cname, project=f"Pedido Online {number}", total=total, received=total,
+                     method="Stripe", due_date=paid_at[:10])
+    rdoc = rec.model_dump()
+    rdoc.update({"origin": "Pedido Online", "order_number": number, "order_id": oid,
+                 "paid_date": paid_at, "type": "receita"})
+    await db.receivables.insert_one(rdoc)
+    await order_history(oid, "Receita criada automaticamente.")
+    # 2) Email ao cliente
+    if order.get("customer_email"):
+        ok = await send_email_raw(order["customer_email"], "Pagamento recebido", _order_email_customer(order))
+        await order_history(oid, "Email enviado ao cliente." if ok else "Falha ao enviar email ao cliente.")
+    else:
+        await order_history(oid, "Cliente sem email. Email de confirmação não enviado.")
+    # 3) Email ao fotógrafo
+    ok2 = await send_email_raw(PHOTOGRAPHER_EMAIL, "Novo pedido pago", _order_email_photographer(order))
+    await order_history(oid, "Email enviado ao fotógrafo." if ok2 else "Falha ao enviar email ao fotógrafo.")
+    # 4) Notificação
+    await create_notification("payment_received", "Pagamento recebido", f"Pedido {number} pago — {fmt_eur(total)}", oid)
+    await order_history(oid, "Notificação criada.")
+    # 5) CRM
+    await create_activity("payment", f"Pedido {number} pago.", cname, oid)
+    await order_history(oid, "CRM atualizado.")
+
+
 @api_router.post("/public/galleries/{token}/store-order")
 async def public_store_order(token: str, body: dict):
     doc = await _get_by_token(token)
@@ -949,7 +1067,13 @@ async def public_store_order(token: str, body: dict):
         logger.exception("Stripe checkout error")
         raise HTTPException(502, f"Erro ao criar sessão de pagamento: {e}")
     order["stripe_session_id"] = session.id
+    order["history"] = [
+        {"ts": now_iso(), "message": "Pedido criado."},
+        {"ts": now_iso(), "message": "Checkout iniciado."},
+    ]
     await db.store_orders.insert_one(order)
+    await create_notification("new_order", "Novo pedido", f"Pedido {number} criado — {fmt_eur(total)}", order["id"])
+    await create_activity("order", f"Pedido {number} criado.", order.get("customer_name") or "Cliente", order["id"])
     return {"ok": True, "order": clean(order), "checkout_url": session.url, "session_id": session.id}
 
 
@@ -986,13 +1110,20 @@ async def stripe_webhook(request: Request):
         await db.store_orders.update_one(
             {"stripe_session_id": obj["id"], "payment_status": {"$ne": "paid"}},
             {"$set": {"payment_status": "paid", "stripe_payment_intent_id": obj.get("payment_intent", ""), "paid_at": now}})
+        await run_paid_automation(obj["id"])
     elif etype == "checkout.session.async_payment_succeeded":
         await db.store_orders.update_one(
             {"stripe_session_id": obj["id"], "payment_status": {"$ne": "paid"}},
             {"$set": {"payment_status": "paid", "paid_at": now}})
+        await run_paid_automation(obj["id"])
     elif etype in ("checkout.session.async_payment_failed", "checkout.session.expired"):
         await db.store_orders.update_one(
             {"stripe_session_id": obj["id"]}, {"$set": {"payment_status": "failed"}})
+        o = await db.store_orders.find_one({"stripe_session_id": obj["id"]})
+        if o and not o.get("payment_failed_notified"):
+            await db.store_orders.update_one({"id": o["id"]}, {"$set": {"payment_failed_notified": True}})
+            await order_history(o["id"], "Pagamento não concluído (falhou ou expirou).")
+            await create_notification("order_cancelled", "Pedido cancelado", f"Pagamento não concluído — Pedido {o.get('number','')}", o["id"])
     elif etype == "charge.refunded":
         await db.store_orders.update_one(
             {"stripe_payment_intent_id": obj.get("payment_intent")}, {"$set": {"payment_status": "refunded"}})
@@ -1373,6 +1504,11 @@ async def update_order_status(oid: str, body: dict):
     doc = await db.store_orders.find_one({"id": oid}, {"_id": 0})
     if not doc:
         raise HTTPException(404, "Pedido não encontrado")
+    await order_history(oid, f"Estado operacional alterado para '{status}'.")
+    if status == "cancelado":
+        await create_notification("order_cancelled", "Pedido cancelado", f"Pedido {doc.get('number','')} cancelado", oid)
+    elif status == "entregue":
+        await create_notification("order_completed", "Pedido concluído", f"Pedido {doc.get('number','')} entregue", oid)
     return doc
 
 
@@ -1380,6 +1516,34 @@ async def update_order_status(oid: str, body: dict):
 async def delete_order(oid: str):
     await db.store_orders.delete_one({"id": oid})
     return {"ok": True}
+
+
+# ---------------- Notificações & Atividades (Fase 4) ----------------
+@api_router.get("/notifications")
+async def list_notifications(limit: int = 50):
+    return await db.notifications.find({}, {"_id": 0}).sort("created_at", -1).to_list(limit)
+
+
+@api_router.get("/notifications/unread-count")
+async def notifications_unread_count():
+    return {"count": await db.notifications.count_documents({"read": False})}
+
+
+@api_router.post("/notifications/{nid}/read")
+async def notification_mark_read(nid: str):
+    await db.notifications.update_one({"id": nid}, {"$set": {"read": True}})
+    return {"ok": True}
+
+
+@api_router.post("/notifications/read-all")
+async def notifications_read_all():
+    await db.notifications.update_many({"read": False}, {"$set": {"read": True}})
+    return {"ok": True}
+
+
+@api_router.get("/activities")
+async def list_activities(limit: int = 30):
+    return await db.activities.find({}, {"_id": 0}).sort("created_at", -1).to_list(limit)
 
 
 # ---------------- Dashboard ----------------
@@ -1458,6 +1622,13 @@ async def dashboard_stats():
 
     upcoming = sorted([s for s in sessions if s.get("date", "") >= td.isoformat()], key=lambda x: x.get("date", ""))[:5]
 
+    paid_orders_docs = await db.store_orders.find({"payment_status": "paid"}, {"_id": 0}).to_list(5000)
+    paid_orders = len(paid_orders_docs)
+    total_sales = round(sum(o.get("total", 0) or 0 for o in paid_orders_docs), 2)
+    avg_ticket = round(total_sales / paid_orders, 2) if paid_orders else 0
+    store_revenue_month = round(sum((o.get("total", 0) or 0) for o in paid_orders_docs if (o.get("paid_at") or "").startswith(ym)), 2)
+    notifications_unread = await db.notifications.count_documents({"read": False})
+
     return {
         "revenue_month": round(revenue_month, 2),
         "revenue_year": round(revenue_year, 2),
@@ -1475,6 +1646,11 @@ async def dashboard_stats():
         "upcoming_sessions": upcoming,
         "total_clients": len(clients),
         "total_sessions": len(sessions),
+        "total_sales": total_sales,
+        "paid_orders": paid_orders,
+        "avg_ticket": avg_ticket,
+        "store_revenue_month": store_revenue_month,
+        "notifications_unread": notifications_unread,
     }
 
 

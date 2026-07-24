@@ -1,0 +1,42 @@
+{
+  "summary": "FASE 4 — Automação Pós-Venda validated end-to-end. Backend pytest 12/12 passed (test_iteration21_automation.py) covering: notifications list/unread-count/read/read-all, activities feed, dashboard stats contract (total_sales/paid_orders/avg_ticket/notifications_unread/store_revenue_month), order-creation side-effects (Pedido criado./Checkout iniciado., new_order notification + order CRM activity), status-change notifications (cancelado -> order_cancelled, entregue -> order_completed), paid-order artifacts (full chronological history, receita, payment_received notif, 'Pedido X pago.' CRM activity), and webhook signature rejection. FULL E2E STRIPE: placed order in /g/c16d3ba7e5f5 with product 'Pack Digital — 10 fotos editadas' 60€, customer 'delivered@resend.dev', filed finalize-order-btn -> redirected to checkout.stripe.com (cs_test_a1ykf0oAGzVySs2LqduqynLlWJ327Wxoi3wSRY4exoDLQhIbfzQVMRiWoD), filled card 4242 4242 4242 4242 12/34 CVC 123 + billingName + ZIP + phoneNumber, redirected to /payment/success and payment-paid card showed 'Pagamento confirmado! Obrigado. O teu pedido ENC-2026-0026 foi pago (60,00 €)'. Verified via backend: payment_status='paid', status='novo' (UNCHANGED), history contains ALL required chronological entries: 'Pedido criado.', 'Checkout iniciado.', 'Pagamento confirmado pelo Stripe.', 'Receita criada automaticamente.', 'Email enviado ao cliente.', 'Email enviado ao fotógrafo.', 'Notificação criada.', 'CRM atualizado.'. Receivable auto-created: project='Pedido Online ENC-2026-0026', method='Stripe', origin='Pedido Online', total=received=60, status='pago'. Notifications: 'payment_received' (title 'Pagamento recebido') AND 'new_order' both present. CRM activity 'Pedido ENC-2026-0026 pago.' created. Dashboard KPIs (kpi-total-sales=510€, kpi-paid-orders=2, kpi-avg-ticket=255€, kpi-notifications-unread) show live values. Notification bell on /: bell + unread badge=6, clicking opens notifications-panel with 20 items, notifications-mark-all clears badge. Recent-activity-card (data-testid) shows CRM activities including 'Pedido ENC-2026-0026 pago.'. StoreOrders detail dialog for ENC-2026-0026: Estado operacional=Novo, Pagamento=Pago, order-history timeline shows all 8 chronological entries, order-stripe-session shows cs_test_.... Mobile viewport (390x844) also OK — all KPIs and bell render. All acceptance criteria satisfied.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard mobile (390x844)", "issues": ["Quick-action pill row and KPI grid overflow horizontally beyond the viewport (content clipped on the right). Consider flex-wrap or making the quick-actions row horizontally scrollable with overflow-x-auto."]},
+      {"screen": "ClientGallery Radix Dialogs", "issues": ["Carried over from iteration_20: Radix warns about missing DialogDescription/aria-describedby on buy/checkout dialogs. Non-blocking a11y improvement."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration21_automation.py",
+    "/app/test_reports/pytest/iter21_automation.xml"
+  ],
+  "action_items": [
+    "OPTIONAL a11y: add <DialogDescription> to buy/checkout dialogs in ClientGallery to silence Radix warnings.",
+    "OPTIONAL mobile: wrap Dashboard quick-actions row and KPI grid so nothing overflows on 390px viewport (use flex-wrap or overflow-x-auto).",
+    "OPTIONAL copy fix (from iter20): ClientGallery.jsx line ~215 still shows stale 'Sem pagamento online — o estúdio contacta-te...' below Pagar; replace with active Stripe copy."
+  ],
+  "critical_code_review_comments": [
+    "server.py run_paid_automation (line 968) is idempotent via atomic '$ne: True' guard on automation_done — verified: replaying webhook does NOT create duplicate receita/notifications/activity/emails.",
+    "server.py stripe_webhook (line 1099) sets payment_status='paid' with idempotency guard {payment_status: {$ne: paid}} then calls run_paid_automation — operational status is untouched (Option B), as required.",
+    "server.py update_order_status (line 1499) correctly emits order_cancelled / order_completed notifications on manual state changes — validated.",
+    "server.py dashboard_stats (line 1550) computes total_sales/paid_orders/avg_ticket from paid store_orders and store_revenue_month using paid_at prefix (YYYY-MM). Good.",
+    "server.py send_email_raw (line 902) is defensive: returns False silently on missing EMERGENT_EMAIL_KEY or empty 'to'. History logs 'Falha ao enviar...' correctly.",
+    "server.py — file is now 2426 lines, still exceeds 700-line guideline. Suggest splitting notifications/activities/dashboard/store/payments/receivables modules.",
+    "server.py public_store_order (line 1006): still uses body.get('origin_url') unchecked to build Stripe success/cancel redirect URLs. Malicious client could redirect users away — consider validating origin against an allowlist derived from FRONTEND_BASE_URL.",
+    "NotificationBell.jsx polls /notifications/unread-count every 20s — reasonable but consider Server-Sent Events / websocket for real-time badge updates.",
+    "Dashboard.jsx fetches /dashboard/stats and /activities?limit=8 on mount only — no live refresh. Adding a subtle polling or refresh after cross-tab actions would improve UX (nice-to-have)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration21_automation.py"
+  ],
+  "success_rate": { "backend": "100% (12/12 pytest)", "frontend": "100% (E2E Stripe paid + KPIs + bell + panel + mark-all + order history)" },
+  "test_credentials": "No auth. Public gallery access_token c16d3ba7e5f5 (Campanha Vinho Reserva). Stripe TEST card 4242 4242 4242 4242, exp 12/34, CVC 123. Photographer email geral@studioefotografias.pt (server-side).",
+  "seed_data_creation": "conftest.py auto-runs POST /api/seed. Test-created paid order for Phase 4: ENC-2026-0026 (60€) via session cs_test_a1ykf0oAGzVySs2LqduqynLlWJ327Wxoi3wSRY4exoDLQhIbfzQVMRiWoD. Additional pending/cancelado/entregue orders (ENC-2026-0018..0032) created by test suites — safe.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Phase 4 is fully green. To reproduce E2E: gallery /g/c16d3ba7e5f5 -> grid-buy -> buy-product-select -> add-to-cart-confirm -> cart-btn -> checkout-open-btn -> fill checkout-name+checkout-email -> finalize-order-btn -> Stripe (name=cardNumber|cardExpiry|cardCvc|billingName|billingPostalCode|phoneNumber; phone REQUIRED). Uncheck 'Save my info' (label[for=enableStripePass]) to avoid Link account prompt. On checkout.stripe.com do NOT use wait_for_load_state('networkidle') (never idles) — use wait_for_selector on input[name=cardNumber] instead. Verify via GET /api/store/orders, /api/receivables, /api/notifications, /api/activities, /api/dashboard/stats. See test_iteration21_automation.py for all API contracts.",
+  "rca of the issue": "N/A — no bugs. Phase 4 automation feature works end-to-end."
+}

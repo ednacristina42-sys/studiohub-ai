@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import {
   Euro, TrendingUp, Users, UserPlus, Camera, CheckCircle2, Clock, CreditCard, Cake,
-  Plus, CalendarPlus, ImagePlus, FileSpreadsheet, FileText, ShoppingBag, ArrowUpRight,
+  Plus, CalendarPlus, ImagePlus, FileSpreadsheet, FileText, ShoppingBag, ArrowUpRight, Bell, Receipt, Activity,
 } from "lucide-react";
 import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell, Legend,
@@ -20,9 +20,13 @@ const tip = { background: "hsl(var(--popover))", border: "1px solid hsl(var(--bo
 
 export default function Dashboard() {
   const [d, setD] = useState(null);
+  const [activities, setActivities] = useState([]);
   const navigate = useNavigate();
 
-  useEffect(() => { api.get("/dashboard/stats").then((r) => setD(r.data)).catch(() => {}); }, []);
+  useEffect(() => {
+    api.get("/dashboard/stats").then((r) => setD(r.data)).catch(() => {});
+    api.get("/activities?limit=8").then((r) => setActivities(r.data || [])).catch(() => {});
+  }, []);
 
   if (!d) return <div className="grid grid-cols-2 md:grid-cols-4 gap-4">{[...Array(8)].map((_, i) => <Skeleton key={i} className="h-28 rounded-xl" />)}</div>;
 
@@ -35,6 +39,10 @@ export default function Dashboard() {
     { label: "Galerias entregues", value: d.galleries_delivered, icon: CheckCircle2, testid: "kpi-galleries-delivered" },
     { label: "Galerias pendentes", value: d.galleries_pending, icon: Clock, testid: "kpi-galleries-pending" },
     { label: "Pagamentos pendentes", value: eur(d.pending_payments), icon: CreditCard, testid: "kpi-pending-payments" },
+    { label: "Total de vendas", value: eur(d.total_sales), icon: ShoppingBag, testid: "kpi-total-sales" },
+    { label: "Pedidos pagos", value: d.paid_orders ?? 0, icon: Receipt, testid: "kpi-paid-orders" },
+    { label: "Ticket médio", value: eur(d.avg_ticket), icon: TrendingUp, testid: "kpi-avg-ticket" },
+    { label: "Notificações não lidas", value: d.notifications_unread ?? 0, icon: Bell, testid: "kpi-notifications-unread" },
   ];
 
   const actions = [
@@ -191,6 +199,24 @@ export default function Dashboard() {
           )}
         </Card>
       </div>
+
+      {/* Atividade recente (CRM) */}
+      <Card className="p-6 border-border" data-testid="recent-activity-card">
+        <h3 className="font-display text-lg font-medium mb-4 flex items-center gap-2"><Activity className="h-4 w-4 text-primary" /> Atividade recente</h3>
+        {activities.length === 0 ? <p className="text-sm text-muted-foreground py-6 text-center">Sem atividade recente.</p> : (
+          <div className="divide-y divide-border">
+            {activities.map((a) => (
+              <div key={a.id} className="flex items-center justify-between py-2.5" data-testid={`activity-${a.id}`}>
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="h-2 w-2 rounded-full bg-primary shrink-0" />
+                  <p className="text-sm truncate">{a.message}{a.client_name ? <span className="text-muted-foreground"> · {a.client_name}</span> : null}</p>
+                </div>
+                <p className="text-xs text-muted-foreground shrink-0 ml-3">{fmtDate(a.created_at)}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

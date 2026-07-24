@@ -234,6 +234,21 @@ export default function StoreOrders() {
 
               {viewing.notes && <div><p className="text-xs text-muted-foreground">Observações</p><p className="text-sm">{viewing.notes}</p></div>}
 
+              {viewing.history?.length > 0 && (
+                <div data-testid="order-history">
+                  <p className="text-xs text-muted-foreground mb-1.5">Histórico do pedido</p>
+                  <div className="space-y-2 border-l-2 border-border pl-3">
+                    {viewing.history.map((h, i) => (
+                      <div key={i} className="relative">
+                        <span className="absolute -left-[15px] top-1 h-2 w-2 rounded-full bg-primary" />
+                        <p className="text-sm leading-tight">{h.message}</p>
+                        <p className="text-[10px] text-muted-foreground">{fmtDate(h.ts)}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center justify-between font-display text-lg font-medium pt-2 border-t border-border"><span>Total</span><span>{eur(viewing.total)}</span></div>
             </div>
           )}

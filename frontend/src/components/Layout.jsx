@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { AiAssistant } from "@/components/AiAssistant";
+import { NotificationBell } from "@/components/NotificationBell";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -99,7 +100,10 @@ export const Layout = () => {
             </Sheet>
             <h1 className="font-display text-lg font-medium tracking-tight">{current?.label || "StudioHub AI"}</h1>
           </div>
-          <ThemeToggle />
+          <div className="flex items-center gap-1">
+            <NotificationBell />
+            <ThemeToggle />
+          </div>
         </header>
         <main className="p-4 md:p-8 max-w-[1500px]"><Outlet /></main>
       </div>

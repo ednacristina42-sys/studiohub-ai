@@ -130,8 +130,7 @@ db = _TenantDB(_raw_db)  # handle por defeito (fail-closed: gestão exige org)
 # Rotas públicas (sem token de estúdio) — não exigem organização
 PUBLIC_PREFIXES = ("/api/public/", "/api/portal/", "/api/auth/")
 PUBLIC_EXACT = {"/api/", "/api/seed", "/api/stripe/webhook"}
-PUBLIC_GET = {"/api/settings", "/api/templates", "/api/store/products",
-              "/api/store/categories", "/api/store/orders/states"}
+PUBLIC_GET = {"/api/settings", "/api/templates", "/api/store/orders/states"}
 
 
 async def tenant_context(request: Request):
@@ -945,6 +944,14 @@ async def public_gallery(token: str):
     if doc.get("password"):
         return {"protected": True, "title": doc["title"], "client_name": doc.get("client_name", "")}
     return doc
+
+
+@api_router.get("/public/galleries/{token}/products")
+async def public_gallery_products(token: str):
+    # Catálogo público org-aware: só produtos ativos da organização dona da galeria.
+    doc = await _get_by_token(token)
+    current_org.set(doc.get("organization_id"))
+    return await db.products.find({"active": True}, {"_id": 0}).sort("created_at", -1).to_list(1000)
 
 
 @api_router.post("/public/galleries/{token}/verify")

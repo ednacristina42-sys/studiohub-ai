@@ -1,10 +1,10 @@
-"""Fase 5.2 — Testes automáticos de isolamento multi-tenant.
-Cria uma segunda organização (B) + utilizador, e prova que A não vê dados de B e vice-versa.
-Execução: python -m pytest backend/tests/test_tenant_isolation.py -v
+"""Fase 5.2 / 5.2.1 — Testes automáticos de isolamento multi-tenant + catálogo público.
+Cria uma segunda organização (B) + utilizador, e prova que A não vê dados de B e vice-versa,
+incluindo o catálogo público por token de galeria.
+Execução: REACT_APP_BACKEND_URL=<url> python -m pytest backend/tests/test_tenant_isolation.py -v
 """
 import os
 import uuid
-import time
 import bcrypt
 import requests
 from datetime import datetime, timezone
@@ -55,7 +55,6 @@ def _login(email, pw):
     return {"Authorization": f"Bearer {r.json()['token']}"}
 
 
-# ---- setup ----
 ORG_B_ID = _setup_org_b()
 HA = _login(ORG_A_EMAIL, ORG_A_PW)
 HB = _login(ORG_B_EMAIL, ORG_B_PW)
@@ -112,48 +111,48 @@ def test_03_store_isolated():
 
 
 def test_04_financeiro_isolated():
-    a = _get("/receivables", HA)
-    b = _get("/receivables", HB)
-    a_clients = [r.get("client_name") for r in a]
-    b_clients = [r.get("client_name") for r in b]
-    assert NAME_A in a_clients and NAME_A not in b_clients
-    assert NAME_B in b_clients and NAME_B not in a_clients
+    a = [r.get("client_name") for r in _get("/receivables", HA)]
+    b = [r.get("client_name") for r in _get("/receivables", HB)]
+    assert NAME_A in a and NAME_A not in b
+    assert NAME_B in b and NAME_B not in a
 
 
 def test_05_dashboard_isolated():
     da = _get("/dashboard/stats", HA)
     dbs = _get("/dashboard/stats", HB)
-    # Org B foi criada agora: deve ter poucos dados; A tem os dados semeados + criados
-    assert da["total_clients"] > dbs["total_clients"], (da["total_clients"], dbs["total_clients"])
-    # B só tem 1 cliente e 1 galeria criados neste teste
+    assert da["total_clients"] > dbs["total_clients"]
     assert dbs["total_clients"] == 1
     assert dbs["total_sessions"] == 0
 
 
 def test_06_requires_auth():
-    # Endpoints de gestão exigem token (fail-closed)
-    for path in ["/clients", "/galleries", "/receivables", "/dashboard/stats", "/store/orders"]:
+    for path in ["/clients", "/galleries", "/receivables", "/dashboard/stats",
+                 "/store/orders", "/store/products", "/store/categories"]:
         r = requests.get(f"{API}{path}")
         assert r.status_code == 401, f"{path} sem token deveria ser 401, foi {r.status_code}"
-    # Escritas na loja exigem token
     r = requests.post(f"{API}/store/products", json={"name": "x", "price": 1})
     assert r.status_code == 401
-    # NOTA: GET /store/products é catálogo público (galeria pública sem login) -> 200 por design
-    assert requests.get(f"{API}/store/products").status_code == 200
 
 
 def test_07_cross_read_by_id_blocked():
-    # Um recurso criado em A não é acessível com token de B por id direto
     ga = _post("/galleries", HA, {"title": f"XREF_{TAG}"})
     gid = ga["id"]
-    r = requests.get(f"{API}/galleries/{gid}", headers=HB)
-    assert r.status_code == 404, f"B não devia ler galeria de A: {r.status_code}"
-    r2 = requests.get(f"{API}/galleries/{gid}", headers=HA)
-    assert r2.status_code == 200
+    assert requests.get(f"{API}/galleries/{gid}", headers=HB).status_code == 404
+    assert requests.get(f"{API}/galleries/{gid}", headers=HA).status_code == 200
+
+
+def test_08_public_catalog_isolated():
+    ga = _post("/galleries", HA, {"title": f"PUBGAL_A_{TAG}"})
+    gb = _post("/galleries", HB, {"title": f"PUBGAL_B_{TAG}"})
+    ta = _post(f"/galleries/{ga['id']}/share", HA, {})["access_token"]
+    tb = _post(f"/galleries/{gb['id']}/share", HB, {})["access_token"]
+    pa = [p["name"] for p in _get(f"/public/galleries/{ta}/products", {})]
+    pb = [p["name"] for p in _get(f"/public/galleries/{tb}/products", {})]
+    assert PROD_A in pa and PROD_A not in pb
+    assert PROD_B in pb and PROD_B not in pa
 
 
 def teardown_module(module):
-    # limpar dados de teste da org B
     db.clients.delete_many({"organization_id": ORG_B_ID})
     db.galleries.delete_many({"organization_id": ORG_B_ID})
     db.products.delete_many({"organization_id": ORG_B_ID})
@@ -161,8 +160,7 @@ def teardown_module(module):
     db.users.delete_many({"organization_id": ORG_B_ID})
     db.organization_members.delete_many({"organization_id": ORG_B_ID})
     db.organizations.delete_one({"id": ORG_B_ID})
-    # limpar dados de teste criados na org A
     db.clients.delete_many({"name": NAME_A})
-    db.galleries.delete_many({"title": {"$in": [TITLE_A, f"XREF_{TAG}"]}})
+    db.galleries.delete_many({"title": {"$in": [TITLE_A, f"XREF_{TAG}", f"PUBGAL_A_{TAG}"]}})
     db.products.delete_many({"name": PROD_A})
     db.receivables.delete_many({"client_name": NAME_A})

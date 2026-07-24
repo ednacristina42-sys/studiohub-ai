@@ -2436,6 +2436,14 @@ async def ensure_default_org() -> dict:
     return org
 
 
+async def ensure_membership(user_id: str, organization_id: str, role: str = "owner"):
+    existing = await db.organization_members.find_one({"user_id": user_id, "organization_id": organization_id})
+    if not existing:
+        await db.organization_members.insert_one({
+            "id": str(uuid.uuid4()), "organization_id": organization_id, "user_id": user_id,
+            "role": role, "created_at": now_iso()})
+
+
 def _public_user(u: dict) -> dict:
     return {"id": u.get("id", ""), "name": u.get("name", ""), "email": u.get("email", ""),
             "organization_id": u.get("organization_id", ""), "role": u.get("role", "owner")}
@@ -2471,6 +2479,7 @@ async def auth_register(payload: RegisterInput):
             "password_hash": hash_password(payload.password), "organization_id": org["id"],
             "role": "owner", "created_at": now_iso()}
     await db.users.insert_one(dict(user))
+    await ensure_membership(user["id"], org["id"], "owner")
     return {"token": create_studio_token(user["id"], email), "user": _public_user(user)}
 
 
@@ -2553,8 +2562,15 @@ async def _startup_auth():
                 "id": str(uuid.uuid4()), "name": DEFAULT_ORG_NAME, "email": admin_email,
                 "password_hash": hash_password(admin_pw), "organization_id": org["id"],
                 "role": "owner", "created_at": now_iso()})
+    # Backfill idempotente: todos os utilizadores ficam ligados a uma organização (membership)
+    async for u in db.users.find({}):
+        oid = u.get("organization_id") or org["id"]
+        if not u.get("organization_id"):
+            await db.users.update_one({"id": u["id"]}, {"$set": {"organization_id": oid}})
+        await ensure_membership(u["id"], oid, u.get("role", "owner"))
     try:
         await db.users.create_index("email", unique=True)
+        await db.organization_members.create_index([("organization_id", 1), ("user_id", 1)], unique=True)
     except Exception:
         pass
 

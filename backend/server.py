@@ -2569,6 +2569,88 @@ async def ensure_membership(user_id: str, organization_id: str, role: str = "own
             "role": role, "created_at": now_iso()})
 
 
+# ---------------- Fase 5.4: Planos e Limites (infraestrutura — sem bloqueio) ----------------
+PLAN_DEFS = [
+    {"id": "starter", "name": "Starter", "price_eur": 0,
+     "limits": {"clients": 500, "galleries": 20, "storage_gb": 5, "users": 1},
+     "features": {"store": False, "ai": True, "automations": False}},
+    {"id": "pro", "name": "Pro", "price_eur": 29,
+     "limits": {"clients": 5000, "galleries": 500, "storage_gb": 100, "users": 5},
+     "features": {"store": True, "ai": True, "automations": True}},
+    {"id": "business", "name": "Business", "price_eur": 79,
+     "limits": {"clients": 50000, "galleries": 5000, "storage_gb": 1000, "users": 25},
+     "features": {"store": True, "ai": True, "automations": True}},
+]
+PLAN_BY_ID = {p["id"]: p for p in PLAN_DEFS}
+
+
+async def seed_plans():
+    for p in PLAN_DEFS:
+        await _raw_db.plans.update_one({"id": p["id"]}, {"$set": p}, upsert=True)
+
+
+async def ensure_subscription(org_id: str, plan_id: str = "business"):
+    sub = await _raw_db.subscriptions.find_one({"organization_id": org_id})
+    if not sub:
+        await _raw_db.subscriptions.insert_one({
+            "id": str(uuid.uuid4()), "organization_id": org_id, "plan_id": plan_id,
+            "status": "active", "current_period_end": None, "created_at": now_iso()})
+
+
+async def get_org_plan(org_id: str) -> dict:
+    plan_id = "starter"
+    sub = await _raw_db.subscriptions.find_one({"organization_id": org_id})
+    if sub:
+        plan_id = sub.get("plan_id", "starter")
+    plan = await _raw_db.plans.find_one({"id": plan_id}, {"_id": 0})
+    return plan or PLAN_BY_ID.get(plan_id, PLAN_DEFS[0])
+
+
+async def org_feature_enabled(org_id: str, feature: str) -> bool:
+    flag = await _raw_db.feature_flags.find_one({"organization_id": org_id, "feature": feature})
+    if flag is not None and "enabled" in flag:
+        return bool(flag["enabled"])
+    plan = await get_org_plan(org_id)
+    return bool(plan.get("features", {}).get(feature, False))
+
+
+async def org_limit(org_id: str, limit_name: str):
+    plan = await get_org_plan(org_id)
+    return plan.get("limits", {}).get(limit_name)
+
+
+async def org_usage(org_id: str, limit_name: str):
+    if limit_name == "storage_gb":
+        org = await _raw_db.organizations.find_one({"id": org_id})
+        return round((org or {}).get("storage_used_mb", 0) / 1024, 3)
+    coll = {"clients": "clients", "galleries": "galleries", "users": "users"}.get(limit_name)
+    if not coll:
+        return 0
+    return await _raw_db[coll].count_documents({"organization_id": org_id})
+
+
+def require_feature(feature_name: str):
+    """Dependency central (pronta para uso futuro — NÃO bloqueia nesta fase)."""
+    async def _dep():
+        org = current_org.get()
+        if org and not await org_feature_enabled(org, feature_name):
+            raise HTTPException(403, f"Funcionalidade '{feature_name}' indisponível no teu plano")
+        return True
+    return _dep
+
+
+def require_limit(limit_name: str):
+    """Dependency central (pronta para uso futuro — NÃO bloqueia nesta fase)."""
+    async def _dep():
+        org = current_org.get()
+        if org:
+            lim = await org_limit(org, limit_name)
+            if lim is not None and await org_usage(org, limit_name) >= lim:
+                raise HTTPException(402, f"Limite de '{limit_name}' ({lim}) atingido no teu plano")
+        return True
+    return _dep
+
+
 def _public_user(u: dict) -> dict:
     return {"id": u.get("id", ""), "name": u.get("name", ""), "email": u.get("email", ""),
             "organization_id": u.get("organization_id", ""), "role": u.get("role", "owner")}
@@ -2661,6 +2743,21 @@ async def auth_reset(body: dict):
     return {"ok": True}
 
 
+@api_router.get("/plans")
+async def list_plans(user: dict = Depends(get_current_user)):
+    plans = await _raw_db.plans.find({}, {"_id": 0}).to_list(50)
+    return sorted(plans, key=lambda p: p.get("price_eur", 0))
+
+
+@api_router.get("/subscription")
+async def get_subscription(user: dict = Depends(get_current_user)):
+    org_id = user.get("organization_id")
+    sub = await _raw_db.subscriptions.find_one({"organization_id": org_id}, {"_id": 0})
+    plan = await get_org_plan(org_id)
+    usage = {k: await org_usage(org_id, k) for k in ["clients", "galleries", "users", "storage_gb"]}
+    return {"subscription": sub, "plan": plan, "usage": usage}
+
+
 app.include_router(api_router)
 
 app.add_middleware(
@@ -2698,6 +2795,9 @@ async def _startup_auth():
         await db.organization_members.create_index([("organization_id", 1), ("user_id", 1)], unique=True)
     except Exception:
         pass
+    # Fase 5.4: planos + subscrição (infraestrutura; sem bloqueio)
+    await seed_plans()
+    await ensure_subscription(org["id"], "business")
     # Migração idempotente: dados de negócio existentes ficam na organização padrão
     for coll in SCOPED_COLLECTIONS:
         await _raw_db[coll].update_many(

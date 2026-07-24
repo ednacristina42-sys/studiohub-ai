@@ -2406,6 +2406,127 @@ async def portal_profile(payload: PortalProfile, client: dict = Depends(get_curr
     return _public_client(doc)
 
 
+# ---------------- Fase 5.0: Autenticação do Fotógrafo ----------------
+DEFAULT_ORG_NAME = "Studio E Fotografias"
+
+
+class RegisterInput(BaseModel):
+    name: str = ""
+    email: str
+    password: str
+
+
+class LoginInput(BaseModel):
+    email: str
+    password: str
+
+
+def create_studio_token(user_id: str, email: str) -> str:
+    payload = {"sub": user_id, "email": email, "role": "studio",
+               "exp": datetime.now(timezone.utc) + timedelta(days=7)}
+    return pyjwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
+
+
+async def ensure_default_org() -> dict:
+    org = await db.organizations.find_one({"name": DEFAULT_ORG_NAME}, {"_id": 0})
+    if not org:
+        org = {"id": str(uuid.uuid4()), "name": DEFAULT_ORG_NAME, "slug": "studio-e-fotografias",
+               "status": "active", "created_at": now_iso()}
+        await db.organizations.insert_one(dict(org))
+    return org
+
+
+def _public_user(u: dict) -> dict:
+    return {"id": u.get("id", ""), "name": u.get("name", ""), "email": u.get("email", ""),
+            "organization_id": u.get("organization_id", ""), "role": u.get("role", "owner")}
+
+
+async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Não autenticado")
+    token = authorization.split(" ", 1)[1]
+    try:
+        payload = pyjwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
+    except pyjwt.ExpiredSignatureError:
+        raise HTTPException(401, "Sessão expirada")
+    except pyjwt.InvalidTokenError:
+        raise HTTPException(401, "Token inválido")
+    if payload.get("role") != "studio":
+        raise HTTPException(401, "Token inválido")
+    u = await db.users.find_one({"id": payload.get("sub")}, {"_id": 0})
+    if not u:
+        raise HTTPException(401, "Utilizador não encontrado")
+    return u
+
+
+@api_router.post("/auth/register")
+async def auth_register(payload: RegisterInput):
+    email = payload.email.strip().lower()
+    if not email or not payload.password:
+        raise HTTPException(400, "Email e palavra-passe obrigatórios")
+    if await db.users.find_one({"email": email}):
+        raise HTTPException(409, "Já existe uma conta com este email")
+    org = await ensure_default_org()
+    user = {"id": str(uuid.uuid4()), "name": (payload.name or "").strip() or "Fotógrafo", "email": email,
+            "password_hash": hash_password(payload.password), "organization_id": org["id"],
+            "role": "owner", "created_at": now_iso()}
+    await db.users.insert_one(dict(user))
+    return {"token": create_studio_token(user["id"], email), "user": _public_user(user)}
+
+
+@api_router.post("/auth/login")
+async def auth_login(payload: LoginInput):
+    email = payload.email.strip().lower()
+    u = await db.users.find_one({"email": email})
+    if not u or not verify_password(payload.password, u.get("password_hash", "")):
+        raise HTTPException(401, "Credenciais inválidas")
+    return {"token": create_studio_token(u["id"], email), "user": _public_user(u)}
+
+
+@api_router.get("/auth/me")
+async def auth_me(user: dict = Depends(get_current_user)):
+    return _public_user(user)
+
+
+@api_router.post("/auth/logout")
+async def auth_logout(user: dict = Depends(get_current_user)):
+    return {"ok": True}
+
+
+@api_router.post("/auth/forgot-password")
+async def auth_forgot(body: dict):
+    email = (body.get("email") or "").strip().lower()
+    u = await db.users.find_one({"email": email})
+    if u:
+        tok = secrets.token_urlsafe(32)
+        await db.password_reset_tokens.insert_one({
+            "token": tok, "user_id": u["id"], "scope": "studio", "used": False,
+            "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+            "created_at": now_iso()})
+        logging.info(f"[STUDIO RESET] Link para {email}: /reset-password?token={tok}")
+    return {"ok": True}
+
+
+@api_router.post("/auth/reset-password")
+async def auth_reset(body: dict):
+    tok = body.get("token", ""); new_pw = body.get("password", "")
+    if not tok or not new_pw:
+        raise HTTPException(400, "Dados inválidos")
+    rec = await db.password_reset_tokens.find_one({"token": tok, "scope": "studio"})
+    if not rec or rec.get("used"):
+        raise HTTPException(400, "Token inválido ou já usado")
+    try:
+        if datetime.fromisoformat(rec["expires_at"]) < datetime.now(timezone.utc):
+            raise HTTPException(400, "Token expirado")
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+    await db.users.update_one({"id": rec["user_id"]}, {"$set": {"password_hash": hash_password(new_pw)}})
+    await db.password_reset_tokens.update_one({"token": tok}, {"$set": {"used": True}})
+    return {"ok": True}
+
+
 app.include_router(api_router)
 
 app.add_middleware(
@@ -2418,6 +2539,24 @@ app.add_middleware(
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+@app.on_event("startup")
+async def _startup_auth():
+    org = await ensure_default_org()
+    admin_email = os.environ.get("ADMIN_EMAIL", "").strip().lower()
+    admin_pw = os.environ.get("ADMIN_PASSWORD", "")
+    if admin_email and admin_pw:
+        existing = await db.users.find_one({"email": admin_email})
+        if not existing:
+            await db.users.insert_one({
+                "id": str(uuid.uuid4()), "name": DEFAULT_ORG_NAME, "email": admin_email,
+                "password_hash": hash_password(admin_pw), "organization_id": org["id"],
+                "role": "owner", "created_at": now_iso()})
+    try:
+        await db.users.create_index("email", unique=True)
+    except Exception:
+        pass
 
 
 @app.on_event("shutdown")

@@ -24,6 +24,11 @@ import Definicoes from "@/pages/Definicoes";
 import ComingSoon from "@/pages/ComingSoon";
 import { SettingsProvider } from "@/lib/settings";
 import { PanelProvider } from "@/lib/panels";
+import { AuthProvider, useAuth } from "@/lib/auth";
+import StudioAuth from "@/pages/StudioAuth";
+import ResetPassword from "@/pages/ResetPassword";
+import { Loader2 } from "lucide-react";
+import { Navigate } from "react-router-dom";
 import { PortalAuthProvider } from "@/lib/portalAuth";
 import PortalLogin from "@/pages/portal/PortalLogin";
 import PortalLayout from "@/pages/portal/PortalLayout";
@@ -38,11 +43,19 @@ const soon = [
   { path: "/automacoes", title: "Automações", desc: "Fluxos automáticos para poupar horas de trabalho." },
 ];
 
+const ProtectedRoute = ({ children }) => {
+  const { user, ready } = useAuth();
+  if (!ready) return <div className="min-h-screen flex items-center justify-center bg-background"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+  if (!user) return <Navigate to="/login" replace />;
+  return children;
+};
+
 function App() {
   useEffect(() => { api.post("/seed").catch(() => {}); }, []);
   return (
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
       <SettingsProvider>
+      <AuthProvider>
       <PanelProvider>
       <div className="App grain">
         <Toaster position="top-right" richColors closeButton />
@@ -51,6 +64,8 @@ function App() {
             <Route path="/g/:token" element={<ClientGallery />} />
             <Route path="/payment/success" element={<PaymentSuccess />} />
             <Route path="/payment/cancel" element={<PaymentCancel />} />
+            <Route path="/login" element={<StudioAuth />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/portal/login" element={<PortalAuthProvider><PortalLogin /></PortalAuthProvider>} />
             <Route path="/portal" element={<PortalAuthProvider><PortalLayout /></PortalAuthProvider>}>
               <Route index element={<PortalDashboard />} />
@@ -62,7 +77,7 @@ function App() {
               <Route path="downloads" element={<PortalDownloads />} />
               <Route path="perfil" element={<PortalProfile />} />
             </Route>
-            <Route element={<Layout />}>
+            <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/clientes" element={<Clients />} />
               <Route path="/clientes/:id" element={<ClientDetail />} />
@@ -85,6 +100,7 @@ function App() {
         </BrowserRouter>
       </div>
       </PanelProvider>
+      </AuthProvider>
       </SettingsProvider>
     </ThemeProvider>
   );

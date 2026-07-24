@@ -1,12 +1,13 @@
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import {
   LayoutDashboard, Users, Camera, Calendar, Images, FileText, FileSpreadsheet,
-  Wallet, ShoppingBag, Globe, Megaphone, Sparkles, Workflow, Settings, Menu, Aperture,
+  Wallet, ShoppingBag, Globe, Megaphone, Sparkles, Workflow, Settings, Menu, Aperture, LogOut,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { AiAssistant } from "@/components/AiAssistant";
 import { NotificationBell } from "@/components/NotificationBell";
+import { useAuth } from "@/lib/auth";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -71,6 +72,28 @@ const Brand = () => (
   </div>
 );
 
+const UserFooter = () => {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  const doLogout = async () => { await logout(); navigate("/login"); };
+  return (
+    <div className="p-3 border-t border-border shrink-0" data-testid="user-footer">
+      <div className="flex items-center gap-2.5 px-2 py-2">
+        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary text-sm font-medium shrink-0">
+          {(user?.name || "?").charAt(0).toUpperCase()}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium truncate" data-testid="user-name">{user?.name || "—"}</p>
+          <p className="text-[11px] text-muted-foreground truncate" data-testid="user-email">{user?.email || ""}</p>
+        </div>
+      </div>
+      <Button variant="ghost" size="sm" data-testid="logout-btn" onClick={doLogout} className="w-full justify-start gap-2 text-muted-foreground hover:text-destructive mt-1">
+        <LogOut className="h-4 w-4" /> Sair
+      </Button>
+    </div>
+  );
+};
+
 export const Layout = () => {
   const [open, setOpen] = useState(false);
   const location = useLocation();
@@ -81,9 +104,7 @@ export const Layout = () => {
       <aside className="hidden md:flex md:flex-col md:w-64 border-r border-border fixed inset-y-0 bg-background z-20">
         <Brand />
         <NavItems />
-        <div className="p-4 border-t border-border shrink-0">
-          <p className="text-[11px] text-muted-foreground">Plataforma de gestão para fotógrafos</p>
-        </div>
+        <UserFooter />
       </aside>
 
       <div className="flex-1 md:pl-64 relative z-10">
@@ -96,6 +117,7 @@ export const Layout = () => {
               <SheetContent side="left" className="p-0 w-64 flex flex-col">
                 <Brand />
                 <NavItems onNavigate={() => setOpen(false)} />
+                <UserFooter />
               </SheetContent>
             </Sheet>
             <h1 className="font-display text-lg font-medium tracking-tight">{current?.label || "StudioHub AI"}</h1>

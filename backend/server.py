@@ -26,7 +26,8 @@ load_dotenv(ROOT_DIR / '.env')
 
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+_raw_db = client[os.environ['DB_NAME']]
+rdb = _raw_db  # handle sem scoping (sistema/público)
 
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
 JWT_SECRET = os.environ.get('JWT_SECRET', 'dev-secret')
@@ -39,6 +40,119 @@ EMAIL_BASE_URL = "https://integrations.emergentagent.com"
 EMERGENT_EMAIL_KEY = os.environ.get('EMERGENT_EMAIL_KEY', '')
 EMAIL_FROM_NAME = os.environ.get('EMAIL_FROM_NAME', 'StudioHub AI')
 PHOTOGRAPHER_EMAIL = os.environ.get('PHOTOGRAPHER_EMAIL', '')
+
+# ---------------- Fase 5.2: Tenant Isolation (helper central único) ----------------
+from contextvars import ContextVar
+current_org: ContextVar = ContextVar("current_org", default=None)
+
+# Coleções isoladas por organização (organization_id auto-injetado)
+SCOPED_COLLECTIONS = {
+    "clients", "sessions", "galleries", "store_orders", "products", "store_categories",
+    "quotes", "contracts", "invoices", "receivables", "payables", "events",
+    "notifications", "activities", "ai_messages", "settings",
+}
+
+
+class _TColl:
+    """Wrapper de coleção: injeta organization_id em TODAS as leituras/escritas quando há org no contexto."""
+    def __init__(self, coll, name):
+        self._c = coll
+        self._n = name
+
+    def _on(self):
+        return self._n in SCOPED_COLLECTIONS and current_org.get() is not None
+
+    def _q(self, q):
+        if self._on():
+            q = dict(q or {})
+            q["organization_id"] = current_org.get()
+            return q
+        return q if q is not None else {}
+
+    def find(self, q=None, *a, **k):
+        return self._c.find(self._q(q), *a, **k)
+
+    async def find_one(self, q=None, *a, **k):
+        return await self._c.find_one(self._q(q), *a, **k)
+
+    async def count_documents(self, q=None, *a, **k):
+        return await self._c.count_documents(self._q(q), *a, **k)
+
+    async def distinct(self, key, q=None, *a, **k):
+        return await self._c.distinct(key, self._q(q), *a, **k)
+
+    def aggregate(self, pipeline, *a, **k):
+        if self._on():
+            pipeline = [{"$match": {"organization_id": current_org.get()}}] + list(pipeline)
+        return self._c.aggregate(pipeline, *a, **k)
+
+    async def insert_one(self, doc, *a, **k):
+        if self._on() and isinstance(doc, dict) and "organization_id" not in doc:
+            doc["organization_id"] = current_org.get()
+        return await self._c.insert_one(doc, *a, **k)
+
+    async def insert_many(self, docs, *a, **k):
+        if self._on():
+            for d in docs:
+                if isinstance(d, dict) and "organization_id" not in d:
+                    d["organization_id"] = current_org.get()
+        return await self._c.insert_many(docs, *a, **k)
+
+    async def update_one(self, q, u, *a, **k):
+        return await self._c.update_one(self._q(q), u, *a, **k)
+
+    async def update_many(self, q, u, *a, **k):
+        return await self._c.update_many(self._q(q), u, *a, **k)
+
+    async def delete_one(self, q, *a, **k):
+        return await self._c.delete_one(self._q(q), *a, **k)
+
+    async def delete_many(self, q, *a, **k):
+        return await self._c.delete_many(self._q(q), *a, **k)
+
+    async def find_one_and_update(self, q, u, *a, **k):
+        return await self._c.find_one_and_update(self._q(q), u, *a, **k)
+
+    async def create_index(self, *a, **k):
+        return await self._c.create_index(*a, **k)
+
+
+class _TenantDB:
+    def __init__(self, raw):
+        self._raw = raw
+
+    def __getattr__(self, name):
+        return _TColl(self._raw[name], name)
+
+
+db = _TenantDB(_raw_db)  # handle por defeito (fail-closed: gestão exige org)
+
+# Rotas públicas (sem token de estúdio) — não exigem organização
+PUBLIC_PREFIXES = ("/api/public/", "/api/portal/", "/api/auth/")
+PUBLIC_EXACT = {"/api/", "/api/seed", "/api/stripe/webhook"}
+PUBLIC_GET = {"/api/settings", "/api/templates", "/api/store/products",
+              "/api/store/categories", "/api/store/orders/states"}
+
+
+async def tenant_context(request: Request):
+    org = None
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        try:
+            payload = pyjwt.decode(auth[7:], JWT_SECRET, algorithms=[JWT_ALG])
+            if payload.get("role") == "studio":
+                org = payload.get("organization_id")
+                if not org:
+                    u = await _raw_db.users.find_one({"id": payload.get("sub")})
+                    org = u.get("organization_id") if u else None
+        except Exception:
+            org = None
+    current_org.set(org)
+    path = request.url.path
+    is_public = (path in PUBLIC_EXACT or any(path.startswith(p) for p in PUBLIC_PREFIXES)
+                 or (request.method == "GET" and path in PUBLIC_GET))
+    if not is_public and org is None:
+        raise HTTPException(401, "Não autenticado")
 
 
 def hash_password(pw: str) -> str:
@@ -58,7 +172,7 @@ def create_client_token(client_id: str, email: str) -> str:
     return pyjwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
 
 app = FastAPI(title="StudioHub AI")
-api_router = APIRouter(prefix="/api")
+api_router = APIRouter(prefix="/api", dependencies=[Depends(tenant_context)])
 
 
 def now_iso():
@@ -974,6 +1088,7 @@ async def run_paid_automation(session_id: str):
         {"id": order["id"], "automation_done": {"$ne": True}}, {"$set": {"automation_done": True}})
     if res.modified_count == 0:
         return
+    current_org.set(order.get("organization_id"))
     oid = order["id"]; number = order.get("number", ""); total = order.get("total", 0) or 0
     cname = order.get("customer_name") or "Cliente"
     paid_at = order.get("paid_at") or now_iso()
@@ -1006,6 +1121,7 @@ async def run_paid_automation(session_id: str):
 @api_router.post("/public/galleries/{token}/store-order")
 async def public_store_order(token: str, body: dict):
     doc = await _get_by_token(token)
+    current_org.set(doc.get("organization_id"))
     items = body.get("items", [])
     if not items:
         raise HTTPException(400, "Carrinho vazio")
@@ -1657,6 +1773,8 @@ async def dashboard_stats():
 # ---------------- Seed ----------------
 @api_router.post("/seed")
 async def seed():
+    _seed_org = await ensure_default_org()
+    current_org.set(_seed_org["id"])
     if await db.clients.count_documents({}) > 0:
         return {"seeded": False, "message": "Dados já existem"}
 
@@ -2421,8 +2539,8 @@ class LoginInput(BaseModel):
     password: str
 
 
-def create_studio_token(user_id: str, email: str) -> str:
-    payload = {"sub": user_id, "email": email, "role": "studio",
+def create_studio_token(user_id: str, email: str, organization_id: str = "") -> str:
+    payload = {"sub": user_id, "email": email, "role": "studio", "organization_id": organization_id,
                "exp": datetime.now(timezone.utc) + timedelta(days=7)}
     return pyjwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
 
@@ -2480,7 +2598,7 @@ async def auth_register(payload: RegisterInput):
             "role": "owner", "created_at": now_iso()}
     await db.users.insert_one(dict(user))
     await ensure_membership(user["id"], org["id"], "owner")
-    return {"token": create_studio_token(user["id"], email), "user": _public_user(user)}
+    return {"token": create_studio_token(user["id"], email, org["id"]), "user": _public_user(user)}
 
 
 @api_router.post("/auth/login")
@@ -2489,7 +2607,7 @@ async def auth_login(payload: LoginInput):
     u = await db.users.find_one({"email": email})
     if not u or not verify_password(payload.password, u.get("password_hash", "")):
         raise HTTPException(401, "Credenciais inválidas")
-    return {"token": create_studio_token(u["id"], email), "user": _public_user(u)}
+    return {"token": create_studio_token(u["id"], email, u.get("organization_id", "")), "user": _public_user(u)}
 
 
 @api_router.get("/auth/me")
@@ -2573,8 +2691,13 @@ async def _startup_auth():
         await db.organization_members.create_index([("organization_id", 1), ("user_id", 1)], unique=True)
     except Exception:
         pass
+    # Migração idempotente: dados de negócio existentes ficam na organização padrão
+    for coll in SCOPED_COLLECTIONS:
+        await _raw_db[coll].update_many(
+            {"organization_id": {"$exists": False}}, {"$set": {"organization_id": org["id"]}})
 
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    client.close()
     client.close()

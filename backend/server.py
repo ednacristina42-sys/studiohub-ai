@@ -19,7 +19,7 @@ from datetime import datetime, timezone, timedelta, date
 
 import httpx
 import stripe
-from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+from ai_compat import LlmChat, UserMessage, ImageContent
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')

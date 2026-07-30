@@ -29,15 +29,12 @@ client = AsyncIOMotorClient(mongo_url)
 _raw_db = client[os.environ['DB_NAME']]
 rdb = _raw_db  # handle sem scoping (sistema/público)
 
-EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
 JWT_SECRET = os.environ.get('JWT_SECRET', 'dev-secret')
 JWT_ALG = "HS256"
 
-stripe.api_key = os.environ.get('STRIPE_SECRET_KEY') or 'sk_test_emergent'
+stripe.api_key = os.environ.get('STRIPE_SECRET_KEY', '')  # vazio = Stripe desativado (não bloqueia o arranque)
 STRIPE_WEBHOOK_SECRET = os.environ.get('STRIPE_WEBHOOK_SECRET', '')
 
-EMAIL_BASE_URL = "https://integrations.emergentagent.com"
-EMERGENT_EMAIL_KEY = os.environ.get('EMERGENT_EMAIL_KEY', '')
 EMAIL_FROM_NAME = os.environ.get('EMAIL_FROM_NAME', 'StudioHub AI')
 PHOTOGRAPHER_EMAIL = os.environ.get('PHOTOGRAPHER_EMAIL', '')
 
@@ -732,7 +729,6 @@ async def ai_select(gallery_id: str):
         raise HTTPException(400, "Sem fotos para analisar")
 
     chat = LlmChat(
-        api_key=EMERGENT_LLM_KEY,
         session_id=f"ai-select-{gallery_id}-{uuid.uuid4()}",
         system_message=(
             "És um assistente de curadoria fotográfica profissional. Avalias fotografias "
@@ -893,7 +889,7 @@ async def gallery_ai_search(gallery_id: str, body: dict):
     system = ("És um motor de pesquisa de fotografias. Recebes uma consulta em linguagem natural e uma lista de fotografias "
               "com etiquetas e descrições. Devolves APENAS JSON: {\"ids\": [ids das fotos que correspondem]}. Sem texto extra.")
     try:
-        chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"search-{gallery_id}-{uuid.uuid4()}", system_message=system).with_model("openai", "gpt-5.4")
+        chat = LlmChat(session_id=f"search-{gallery_id}-{uuid.uuid4()}", system_message=system).with_model("openai", "gpt-5.4")
         msg = UserMessage(text=f"Consulta: {query}\n\nFotografias:\n{json.dumps(catalog, ensure_ascii=False)}")
         resp = await chat.send_message(msg)
         text = (resp if isinstance(resp, str) else str(resp)).replace("```json", "").replace("```", "").strip()
@@ -1021,18 +1017,11 @@ def fmt_eur(v):
 
 
 async def send_email_raw(to: str, subject: str, html: str) -> bool:
-    if not EMERGENT_EMAIL_KEY or not to:
-        return False
-    try:
-        async with httpx.AsyncClient(timeout=30) as c:
-            r = await c.post(f"{EMAIL_BASE_URL}/api/v1/email/send",
-                             headers={"X-Email-Key": EMERGENT_EMAIL_KEY},
-                             json={"to": [to], "subject": subject, "html": html, "from_name": EMAIL_FROM_NAME})
-        r.raise_for_status()
-        return True
-    except Exception as e:
-        logging.error(f"[EMAIL] falha ao enviar para {to}: {e}")
-        return False
+    # Envio de email DESATIVADO: a dependência do serviço de email da Emergent
+    # foi removida e ainda não há provedor próprio configurado.
+    # Para reativar, integrar aqui um provedor (ex.: Resend/SMTP) — passo futuro.
+    logging.info(f"[EMAIL] desativado — mensagem para {to} não enviada (assunto: {subject!r})")
+    return False
 
 
 async def create_notification(ntype: str, title: str, message: str, order_id: str = ""):
@@ -2140,7 +2129,7 @@ async def ai_chat(payload: AiChatIn):
         system += f"\n\nHistórico recente da conversa:\n{convo}"
 
     try:
-        chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"assist-{session_id}", system_message=system).with_model("openai", "gpt-5.4")
+        chat = LlmChat(session_id=f"assist-{session_id}", system_message=system).with_model("openai", "gpt-5.4")
         reply = await chat.send_message(UserMessage(text=payload.message))
         reply = reply if isinstance(reply, str) else str(reply)
     except Exception as e:

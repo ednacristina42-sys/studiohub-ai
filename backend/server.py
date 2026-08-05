@@ -554,6 +554,12 @@ class AiChatIn(BaseModel):
     session_id: Optional[str] = ""
 
 
+class AiAssistantIn(BaseModel):
+    assistant: str  # comercial | fotografico | financeiro | marketing
+    message: str
+    session_id: Optional[str] = ""
+
+
 class Settings(BaseModel):
     company_name: str = "StudioHub AI"
     country: str = "PT"
@@ -2153,6 +2159,120 @@ async def ai_chat(payload: AiChatIn):
         {"session_id": session_id, "role": "assistant", "content": reply, "ts": now_iso()},
     ])
     return {"session_id": session_id, "reply": reply}
+
+
+# ---------------- AI Assistants especializados (Comercial / Fotográfico / Financeiro / Marketing) ----------------
+ASSISTANT_PERSONAS = {
+    "comercial": (
+        "És o ASSISTENTE COMERCIAL do StudioHub AI, especialista em vendas para estúdios de fotografia. "
+        "Ajudas a fechar negócio: crias propostas e orçamentos persuasivos, sugeres valores de mercado, "
+        "redigis emails comerciais, mensagens de WhatsApp curtas e cordiais, e sequências de follow-up. "
+        "És direto, caloroso e orientado à conversão. Quando gerares uma mensagem de WhatsApp, mantém-na curta "
+        "e com tom pessoal. Quando gerares um orçamento, estrutura por itens com valores em euros."
+    ),
+    "fotografico": (
+        "És o ASSISTENTE FOTOGRÁFICO do StudioHub AI, um diretor de fotografia experiente. "
+        "Ajudas a planear sessões: crias roteiros de sessão, checklists de casamento, listas de equipamento "
+        "e cronogramas detalhados do evento (timeline hora a hora). És prático, minucioso e organizado. "
+        "Usa listas e tabelas quando fizer sentido."
+    ),
+    "financeiro": (
+        "És o ASSISTENTE FINANCEIRO do StudioHub AI, um CFO virtual para fotógrafos. "
+        "Analisas os números reais do estúdio: fazes previsão de faturação, análise de fluxo de caixa, "
+        "identificas clientes em atraso e ajudas a definir e acompanhar metas mensais. "
+        "Baseia-te SEMPRE nos dados fornecidos. Apresenta valores em euros, sê claro e apresenta recomendações acionáveis."
+    ),
+    "marketing": (
+        "És o ASSISTENTE DE MARKETING do StudioHub AI, um especialista em marketing digital para fotógrafos. "
+        "Crias publicações para redes sociais, legendas apelativas com hashtags, copy para anúncios Meta (Facebook/Instagram) "
+        "e Google Ads (títulos e descrições dentro dos limites de caracteres), e emails de campanha. "
+        "És criativo, atual e focado em resultados. Adapta o tom à marca do estúdio."
+    ),
+}
+
+ASSISTANT_LABELS = {
+    "comercial": "Assistente Comercial", "fotografico": "Assistente Fotográfico",
+    "financeiro": "Assistente Financeiro", "marketing": "Assistente de Marketing",
+}
+
+
+async def _assistant_context(assistant: str) -> str:
+    settings = await db.settings.find_one({"_key": "app"}, {"_id": 0, "_key": 0}) or {}
+    company = settings.get("company_name", "o estúdio")
+    lines = [f"Estúdio: {company}"]
+
+    if assistant in ("comercial", "marketing"):
+        clients = await db.clients.find({}, {"_id": 0}).to_list(500)
+        leads = [c for c in clients if c.get("status") == "lead"]
+        lines.append(f"Total de clientes: {len(clients)} (leads por converter: {len(leads)})")
+        if clients:
+            lines.append("Alguns clientes: " + ", ".join(c.get("name", "") for c in clients[:12]))
+        quotes = await db.quotes.find({}, {"_id": 0}).to_list(100)
+        open_q = [q for q in quotes if q.get("status") in ("rascunho", "enviado")]
+        if open_q:
+            lines.append("Propostas em aberto: " + "; ".join(f"{q.get('client_name','')} — {q.get('title','')}" for q in open_q[:8]))
+
+    if assistant == "fotografico":
+        sessions = await db.sessions.find({}, {"_id": 0}).sort("date", 1).to_list(200)
+        upcoming = [s for s in sessions if (s.get("date", "") or "") >= today().isoformat()][:10]
+        if upcoming:
+            lines.append("Próximas sessões:")
+            for s in upcoming:
+                lines.append(f"- {s.get('title','')} ({s.get('type','')}) · {s.get('client_name','')} · {s.get('date','')} {s.get('time','')} · {s.get('location','')}")
+
+    if assistant == "financeiro":
+        invoices = [invoice_totals(i) for i in await db.invoices.find({}, {"_id": 0}).to_list(500)]
+        receivables = [receivable_view(r) for r in await db.receivables.find({}, {"_id": 0}).to_list(500)]
+        payables = [payable_view(p) for p in await db.payables.find({}, {"_id": 0}).to_list(500)]
+        ym = datetime.now(timezone.utc).strftime("%Y-%m")
+        recv_total = sum(r.get("total", 0) or 0 for r in receivables)
+        recv_open = sum(r.get("balance", 0) or 0 for r in receivables if r.get("status") != "pago")
+        overdue = [r for r in receivables if r.get("status") == "vencido"]
+        pay_pending = sum(p.get("amount", 0) or 0 for p in payables if p.get("status") in ("pendente", "vencido"))
+        month_income = sum(r.get("total", 0) or 0 for r in receivables if (r.get("paid_date", "") or r.get("due_date", ""))[:7] == ym)
+        lines.append(f"Contas a receber (total): {recv_total:.2f} € · em aberto: {recv_open:.2f} €")
+        lines.append(f"Contas a pagar pendentes: {pay_pending:.2f} €")
+        lines.append(f"Recebido/previsto no mês atual ({ym}): {month_income:.2f} €")
+        if overdue:
+            lines.append("Clientes em atraso: " + "; ".join(f"{r.get('client_name','')} ({r.get('balance',0):.2f} €)" for r in overdue[:10]))
+        else:
+            lines.append("Sem clientes em atraso.")
+
+    return "\n".join(lines)
+
+
+@api_router.post("/ai/assistant")
+async def ai_assistant(payload: AiAssistantIn):
+    assistant = payload.assistant if payload.assistant in ASSISTANT_PERSONAS else "comercial"
+    session_id = payload.session_id or f"{assistant}-{uuid.uuid4()}"
+
+    context = await _assistant_context(assistant)
+    system = (
+        ASSISTANT_PERSONAS[assistant] +
+        "\n\nRespondes SEMPRE em português de Portugal, de forma profissional e bem estruturada. "
+        "Produz conteúdo pronto a usar (copiar e colar). Usa Markdown quando ajudar a leitura.\n\n"
+        "Dados atuais do estúdio (usa apenas se relevante):\n" + context
+    )
+
+    prior = await db.ai_messages.find({"session_id": session_id}, {"_id": 0}).sort("ts", 1).to_list(20)
+    if prior:
+        convo = "\n".join(f"{'Fotógrafo' if m['role'] == 'user' else 'Assistente'}: {m['content']}" for m in prior[-8:])
+        system += f"\n\nHistórico recente da conversa:\n{convo}"
+
+    try:
+        chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"asst-{session_id}", system_message=system).with_model("openai", "gpt-5.4")
+        reply = await chat.send_message(UserMessage(text=payload.message))
+        reply = reply if isinstance(reply, str) else str(reply)
+    except Exception as e:
+        logging.warning(f"AI assistant ({assistant}) failed: {e}")
+        raise HTTPException(500, "O assistente não está disponível de momento.")
+
+    ts = now_iso()
+    await db.ai_messages.insert_many([
+        {"session_id": session_id, "role": "user", "content": payload.message, "ts": ts, "assistant": assistant},
+        {"session_id": session_id, "role": "assistant", "content": reply, "ts": now_iso(), "assistant": assistant},
+    ])
+    return {"session_id": session_id, "reply": reply, "assistant": assistant}
 
 
 @api_router.get("/settings")

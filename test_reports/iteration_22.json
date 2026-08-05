@@ -1,0 +1,33 @@
+{
+  "summary": "Tested the new IA (AI Assistants) module. Backend endpoint POST /api/ai/assistant validated for all 4 personas (comercial, fotografico, financeiro, marketing) using authenticated JWT session — all return 200 with PT-PT replies. Financeiro persona correctly injects real studio data (overdue clients, receivables/payables totals). Frontend /ia page renders 4 tabs, tab switching works, quick actions trigger AI responses (copy button appears), custom textarea + send button works. Session continuity confirmed via session_id.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard (post-login)", "issues": ["Recharts warnings 'The width(-1) and height(-1) of chart should be greater than 0' — cosmetic, likely a container that renders before layout; not blocking."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration22_ai_assistants.py",
+    "/app/test_reports/pytest/iteration_22.xml"
+  ],
+  "action_items": [
+    "Optional: silence Recharts width/height(-1) warnings on dashboard by ensuring container has explicit min-height or by rendering only after mount."
+  ],
+  "critical_code_review_comments": [
+    "POST /api/ai/assistant does NOT scope queries by organization_id — _assistant_context calls db.clients/quotes/sessions/invoices/receivables/payables.find({}) with no org filter. Contradicts the stated tenant isolation requirement. In a multi-tenant setup this leaks other tenants' data into the LLM prompt. Should filter by user['organization_id'] taken from Depends(get_current_user).",
+    "server.py is now 2931 lines — consider splitting by domain (auth, ai, finance, galleries, store) into routers.",
+    "AI endpoint has no rate limiting; each call ~15s of gpt-5.4 usage. Consider a per-user throttle."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration22_ai_assistants.py"
+  ],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "100% (all 4 tabs + actions + custom send verified)"},
+  "test_credentials": "geral@studioefotografias.pt / studio123 (JWT stored in localStorage 'studio_token')",
+  "seed_data_creation": "None — used existing seeded data via /api/seed autouse fixture.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "AI assistants module is functional end-to-end. Endpoint requires Bearer JWT (login via /api/auth/login). ASSISTANT_PERSONAS dict at server.py:2165, endpoint at server.py:2244. Tenant isolation is claimed but NOT implemented for the AI context query (see critical review). If org scoping is added later, re-run test_iteration22_ai_assistants.py after ensuring test user has an organization_id.",
+  "rca of the issue": "N/A — no defects blocking; single design concern is missing organization scoping in _assistant_context."
+}

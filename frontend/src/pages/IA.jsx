@@ -105,7 +105,7 @@ export default function IA() {
           </div>
           <div>
             <p className="font-display font-medium">{current.title}</p>
-            <p className="text-xs text-muted-foreground">Powered by OpenAI gpt-5.4 · dados reais do teu estúdio</p>
+            <p className="text-xs text-muted-foreground">Powered by OpenAI · dados reais do teu estúdio · com memória</p>
           </div>
         </div>
         <div className="flex-1 min-h-0">

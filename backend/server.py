@@ -48,7 +48,7 @@ current_org: ContextVar = ContextVar("current_org", default=None)
 SCOPED_COLLECTIONS = {
     "clients", "sessions", "galleries", "store_orders", "products", "store_categories",
     "quotes", "contracts", "invoices", "receivables", "payables", "events",
-    "notifications", "activities", "ai_messages", "settings",
+    "notifications", "activities", "ai_messages", "ai_conversations", "settings",
 }
 
 
@@ -2228,11 +2228,14 @@ async def _assistant_context(assistant: str) -> str:
     return "\n".join(lines)
 
 
-@api_router.post("/ai/assistant")
-async def ai_assistant(payload: AiAssistantIn):
-    assistant = payload.assistant if payload.assistant in ASSISTANT_PERSONAS else "comercial"
-    session_id = payload.session_id or f"{assistant}-{uuid.uuid4()}"
+def _make_title(text: str) -> str:
+    t = " ".join((text or "").strip().split())
+    if not t:
+        return "Nova conversa"
+    return (t[:47] + "…") if len(t) > 48 else t
 
+
+async def _assistant_reply(assistant: str, prior: list, user_message: str) -> str:
     context = await _assistant_context(assistant)
     system = (
         ASSISTANT_PERSONAS[assistant] +
@@ -2240,24 +2243,76 @@ async def ai_assistant(payload: AiAssistantIn):
         "Produz conteúdo pronto a usar (copiar e colar). Usa Markdown quando ajudar a leitura.\n\n"
         "Dados atuais do estúdio (usa apenas se relevante):\n" + context
     )
-
-    prior = await db.ai_messages.find({"session_id": session_id}, {"_id": 0}).sort("ts", 1).to_list(20)
     if prior:
-        convo = "\n".join(f"{'Fotógrafo' if m['role'] == 'user' else 'Assistente'}: {m['content']}" for m in prior[-8:])
-        system += f"\n\nHistórico recente da conversa:\n{convo}"
-
+        convo = "\n".join(f"{'Fotógrafo' if m.get('role') == 'user' else 'Assistente'}: {m.get('content','')}" for m in prior[-10:])
+        system += f"\n\nHistórico recente da conversa (para te lembrares do contexto):\n{convo}"
     try:
-        reply = await ai_compat.chat_complete(system, payload.message)
+        return await ai_compat.chat_complete(system, user_message)
     except Exception as e:
         logging.warning(f"AI assistant ({assistant}) failed: {e}")
         raise HTTPException(500, "O assistente não está disponível de momento.")
 
+
+@api_router.post("/ai/assistant")
+async def ai_assistant(payload: AiAssistantIn):
+    """Inicia uma NOVA conversa com o assistente e devolve o id da conversa."""
+    assistant = payload.assistant if payload.assistant in ASSISTANT_PERSONAS else "comercial"
+    reply = await _assistant_reply(assistant, [], payload.message)
     ts = now_iso()
-    await db.ai_messages.insert_many([
-        {"session_id": session_id, "role": "user", "content": payload.message, "ts": ts, "assistant": assistant},
-        {"session_id": session_id, "role": "assistant", "content": reply, "ts": now_iso(), "assistant": assistant},
-    ])
-    return {"session_id": session_id, "reply": reply, "assistant": assistant}
+    conv = {
+        "id": str(uuid.uuid4()),
+        "assistant": assistant,
+        "title": _make_title(payload.message),
+        "messages": [
+            {"role": "user", "content": payload.message, "created_at": ts},
+            {"role": "assistant", "content": reply, "created_at": now_iso()},
+        ],
+        "created_at": ts,
+        "updated_at": now_iso(),
+    }
+    await db.ai_conversations.insert_one(dict(conv))
+    return {"conversation_id": conv["id"], "title": conv["title"], "reply": reply, "assistant": assistant}
+
+
+@api_router.get("/ai/conversations")
+async def list_ai_conversations(assistant: str = ""):
+    q = {}
+    if assistant in ASSISTANT_PERSONAS:
+        q["assistant"] = assistant
+    return await db.ai_conversations.find(q, {"_id": 0, "messages": 0}).sort("updated_at", -1).to_list(200)
+
+
+@api_router.get("/ai/conversations/{conv_id}")
+async def get_ai_conversation(conv_id: str):
+    doc = await db.ai_conversations.find_one({"id": conv_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Conversa não encontrada")
+    return doc
+
+
+@api_router.post("/ai/conversations/{conv_id}/message")
+async def add_ai_conversation_message(conv_id: str, payload: AiChatIn):
+    doc = await db.ai_conversations.find_one({"id": conv_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Conversa não encontrada")
+    assistant = doc.get("assistant", "comercial")
+    reply = await _assistant_reply(assistant, doc.get("messages", []), payload.message)
+    ts = now_iso()
+    new_msgs = [
+        {"role": "user", "content": payload.message, "created_at": ts},
+        {"role": "assistant", "content": reply, "created_at": now_iso()},
+    ]
+    await db.ai_conversations.update_one(
+        {"id": conv_id},
+        {"$push": {"messages": {"$each": new_msgs}}, "$set": {"updated_at": now_iso()}},
+    )
+    return {"conversation_id": conv_id, "reply": reply, "assistant": assistant}
+
+
+@api_router.delete("/ai/conversations/{conv_id}")
+async def delete_ai_conversation(conv_id: str):
+    await db.ai_conversations.delete_one({"id": conv_id})
+    return {"ok": True}
 
 
 @api_router.get("/settings")

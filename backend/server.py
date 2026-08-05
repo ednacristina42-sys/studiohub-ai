@@ -2319,6 +2319,47 @@ async def delete_ai_conversation(conv_id: str):
     return {"ok": True}
 
 
+# ==== Automacoes: gerar mensagens (confirmacao de sessao / lembrete de pagamento) ====
+
+class AutomationMessageIn(BaseModel):
+    kind: str
+    client_name: Optional[str] = ""
+    details: Optional[str] = ""
+    channel: Optional[str] = "whatsapp"
+
+
+@api_router.post("/automations/message")
+async def automation_message(payload: AutomationMessageIn):
+    settings = await db.settings.find_one({"_key": "app"}, {"_id": 0, "_key": 0}) or {}
+    studio = settings.get("company_name") or "o estudio"
+    channel = payload.channel if payload.channel in ("whatsapp", "email") else "whatsapp"
+    if channel == "whatsapp":
+        tom = "Escreve uma mensagem curta e cordial para WhatsApp, com um toque pessoal e emojis com moderacao."
+    else:
+        tom = "Escreve um email cordial e profissional. Comeca com uma linha 'Assunto: ...' e depois o corpo."
+    if payload.kind == "lembrete_pagamento":
+        objetivo = ("Escreve um lembrete de pagamento simpatico mas claro para um cliente com um valor em atraso. "
+                    "Assume boa-fe, facilita o pagamento e nunca soes agressivo.")
+    else:
+        objetivo = ("Escreve uma mensagem a confirmar os detalhes de uma proxima sessao fotografica com o cliente, "
+                    "transmitindo entusiasmo e pedindo confirmacao de presenca.")
+    system = (
+        f"Es o assistente de comunicacao do estudio de fotografia '{studio}'. "
+        f"Escreves SEMPRE em portugues de Portugal, pronto a copiar e enviar. {tom}"
+    )
+    user = (
+        f"{objetivo}\n\nCliente: {payload.client_name or 'cliente'}\n"
+        f"Detalhes: {payload.details or '(sem detalhes adicionais)'}\n\n"
+        "Devolve APENAS a mensagem final, sem explicacoes nem comentarios."
+    )
+    try:
+        msg = await ai_compat.chat_complete(system, user)
+    except Exception as e:
+        logging.warning(f"automation_message failed: {e}")
+        raise HTTPException(500, "Nao foi possivel gerar a mensagem de momento.")
+    return {"message": msg}
+
+
 @api_router.get("/settings")
 async def get_settings():
     doc = await db.settings.find_one({"_key": "app"}, {"_id": 0, "_key": 0})

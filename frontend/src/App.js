@@ -18,6 +18,7 @@ import Store from "@/pages/Store";
 import Orcamentos from "@/pages/Orcamentos";
 import Contratos from "@/pages/Contratos";
 import IA from "@/pages/IA";
+import Automacoes from "@/pages/Automacoes";
 import ClientGallery from "@/pages/ClientGallery";
 import { PaymentSuccess, PaymentCancel } from "@/pages/PaymentResult";
 import Definicoes from "@/pages/Definicoes";
@@ -40,7 +41,6 @@ import {
 const soon = [
   { path: "/website", title: "Website", desc: "Portfólio, blog, SEO e domínio personalizado." },
   { path: "/marketing", title: "Marketing", desc: "Email, WhatsApp, redes sociais e landing pages." },
-  { path: "/automacoes", title: "Automações", desc: "Fluxos automáticos para poupar horas de trabalho." },
 ];
 
 const ProtectedRoute = ({ children }) => {
@@ -91,6 +91,7 @@ function App() {
               <Route path="/orcamentos" element={<Orcamentos />} />
               <Route path="/contratos" element={<Contratos />} />
               <Route path="/ia" element={<IA />} />
+              <Route path="/automacoes" element={<Automacoes />} />
               <Route path="/definicoes" element={<Definicoes />} />
               {soon.map((s) => (
                 <Route key={s.path} path={s.path} element={<ComingSoon title={s.title} desc={s.desc} />} />

@@ -47,7 +47,7 @@ current_org: ContextVar = ContextVar("current_org", default=None)
 SCOPED_COLLECTIONS = {
     "clients", "sessions", "galleries", "store_orders", "products", "store_categories",
     "quotes", "contracts", "invoices", "receivables", "payables", "events",
-    "notifications", "activities", "ai_messages", "ai_conversations", "settings",
+    "notifications", "activities", "ai_messages", "ai_conversations", "content_calendar", "settings",
 }
 
 
@@ -2358,6 +2358,78 @@ async def automation_message(payload: AutomationMessageIn):
         logging.warning(f"automation_message failed: {e}")
         raise HTTPException(500, "Nao foi possivel gerar a mensagem de momento.")
     return {"message": msg}
+
+
+# ==== Marketing: planeador de conteudo ====
+
+class ContentItem(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    title: str
+    platform: str = "instagram"
+    date: Optional[str] = ""
+    content: Optional[str] = ""
+    status: str = "ideia"
+    notes: Optional[str] = ""
+    created_at: str = Field(default_factory=now_iso)
+
+
+class ContentItemCreate(BaseModel):
+    title: str
+    platform: str = "instagram"
+    date: Optional[str] = ""
+    content: Optional[str] = ""
+    status: str = "ideia"
+    notes: Optional[str] = ""
+
+
+class ContentGenerateIn(BaseModel):
+    platform: str = "instagram"
+    theme: str = ""
+    tone: Optional[str] = ""
+
+
+@api_router.get("/marketing/content")
+async def list_content():
+    return await db.content_calendar.find({}, {"_id": 0}).sort("date", 1).to_list(1000)
+
+
+@api_router.post("/marketing/content")
+async def create_content(payload: ContentItemCreate):
+    obj = ContentItem(**payload.model_dump())
+    await db.content_calendar.insert_one(obj.model_dump())
+    return obj.model_dump()
+
+
+@api_router.patch("/marketing/content/{item_id}")
+async def update_content(item_id: str, payload: dict):
+    allowed = {k: v for k, v in payload.items() if k in ("title", "platform", "date", "content", "status", "notes")}
+    if allowed:
+        await db.content_calendar.update_one({"id": item_id}, {"$set": allowed})
+    return await db.content_calendar.find_one({"id": item_id}, {"_id": 0}) or {}
+
+
+@api_router.delete("/marketing/content/{item_id}")
+async def delete_content(item_id: str):
+    await db.content_calendar.delete_one({"id": item_id})
+    return {"ok": True}
+
+
+@api_router.post("/marketing/generate")
+async def generate_content(payload: ContentGenerateIn):
+    persona = ASSISTANT_PERSONAS.get("marketing", "Es especialista em marketing digital para fotografos.")
+    plataforma = payload.platform or "instagram"
+    system = persona + " Escreves SEMPRE em portugues de Portugal, pronto a publicar."
+    user = (
+        f"Cria conteudo para {plataforma}. Tema/ocasiao: {payload.theme or 'geral'}."
+        + (f" Tom: {payload.tone}." if payload.tone else "")
+        + " Inclui uma legenda apelativa e hashtags relevantes quando fizer sentido. Devolve APENAS o conteudo final."
+    )
+    try:
+        content = await ai_compat.chat_complete(system, user)
+    except Exception as e:
+        logging.warning(f"generate_content failed: {e}")
+        raise HTTPException(500, "Nao foi possivel gerar o conteudo de momento.")
+    return {"content": content}
 
 
 @api_router.get("/settings")

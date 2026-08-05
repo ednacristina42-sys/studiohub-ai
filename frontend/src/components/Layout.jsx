@@ -27,7 +27,7 @@ const groups = [
     { to: "/loja", label: "Loja", icon: ShoppingBag, testid: "nav-store" },
   ]},
   { label: "Crescimento", items: [
-    { to: "/website", label: "Website", icon: Globe, testid: "nav-website" },
+    // { to: "/website", label: "Website", icon: Globe, testid: "nav-website" }, // oculto temporariamente (reativar removendo o comentário)
     { to: "/marketing", label: "Marketing", icon: Megaphone, testid: "nav-marketing" },
     { to: "/ia", label: "Inteligência Artificial", icon: Sparkles, testid: "nav-ai" },
     { to: "/automacoes", label: "Automações", icon: Workflow, testid: "nav-automations" },

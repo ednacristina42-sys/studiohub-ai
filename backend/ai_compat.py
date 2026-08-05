@@ -101,3 +101,24 @@ class LlmChat:
             messages=messages,
         )
         return (resp.choices[0].message.content or "").strip()
+
+
+async def chat_complete(system, message, model=None, image_b64=None):
+    api_key = os.environ.get("OPENAI_API_KEY") or ""
+    if not api_key:
+        raise RuntimeError("Nenhuma chave de IA configurada. Define OPENAI_API_KEY no backend/.env.")
+    from openai import AsyncOpenAI
+    client = AsyncOpenAI(api_key=api_key)
+    if image_b64:
+        user_content = [
+            {"type": "text", "text": message or ""},
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
+        ]
+    else:
+        user_content = message or ""
+    messages = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": user_content})
+    resp = await client.chat.completions.create(model=model or _DEFAULT_MODEL, messages=messages)
+    return (resp.choices[0].message.content or "").strip()

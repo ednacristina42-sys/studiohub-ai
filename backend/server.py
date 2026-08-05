@@ -19,7 +19,6 @@ from datetime import datetime, timezone, timedelta, date
 
 import httpx
 import stripe
-from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
 import ai_compat
 
 ROOT_DIR = Path(__file__).parent
@@ -30,7 +29,6 @@ client = AsyncIOMotorClient(mongo_url)
 _raw_db = client[os.environ['DB_NAME']]
 rdb = _raw_db  # handle sem scoping (sistema/público)
 
-EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
 JWT_SECRET = os.environ.get('JWT_SECRET', 'dev-secret')
 JWT_ALG = "HS256"
 
@@ -738,15 +736,11 @@ async def ai_select(gallery_id: str):
     if not photos:
         raise HTTPException(400, "Sem fotos para analisar")
 
-    chat = LlmChat(
-        api_key=EMERGENT_LLM_KEY,
-        session_id=f"ai-select-{gallery_id}-{uuid.uuid4()}",
-        system_message=(
-            "És um assistente de curadoria fotográfica profissional. Avalias fotografias "
-            "quanto a composição, nitidez, iluminação, emoção e apelo comercial. "
-            "Respondes SEMPRE apenas em JSON válido em português de Portugal."
-        ),
-    ).with_model("openai", "gpt-5.4")
+    photo_system = (
+        "És um assistente de curadoria fotográfica profissional. Avalias fotografias "
+        "quanto a composição, nitidez, iluminação, emoção e apelo comercial. "
+        "Respondes SEMPRE apenas em JSON válido em português de Portugal."
+    )
 
     updated_photos = []
     async with httpx.AsyncClient(timeout=20) as http:
@@ -760,18 +754,14 @@ async def ai_select(gallery_id: str):
                     r = await http.get(url)
                     if r.status_code == 200:
                         b64 = base64.b64encode(r.content).decode()
-                content = [ImageContent(image_base64=b64)] if b64 else []
-                msg = UserMessage(
-                    text=(
-                        "Avalia esta fotografia. Devolve JSON com exatamente estas chaves: "
-                        '{"score": (0-100 inteiro), "tags": [3 etiquetas curtas em português], '
-                        '"reason": "uma frase curta a justificar a nota"}. '
-                        "Sê criterioso: nitidez, composição, luz e emoção."
-                    ),
-                    file_contents=content,
+                photo_prompt = (
+                    "Avalia esta fotografia. Devolve JSON com exatamente estas chaves: "
+                    '{"score": (0-100 inteiro), "tags": [3 etiquetas curtas em português], '
+                    '"reason": "uma frase curta a justificar a nota"}. '
+                    "Sê criterioso: nitidez, composição, luz e emoção."
                 )
-                resp = await chat.send_message(msg)
-                text = (resp if isinstance(resp, str) else str(resp)).strip()
+                resp = await ai_compat.chat_complete(photo_system, photo_prompt, image_b64=b64)
+                text = resp.strip()
                 text = text.replace("```json", "").replace("```", "").strip()
                 data = json.loads(text)
                 p["ai_score"] = float(data.get("score", 0))
@@ -900,10 +890,8 @@ async def gallery_ai_search(gallery_id: str, body: dict):
     system = ("És um motor de pesquisa de fotografias. Recebes uma consulta em linguagem natural e uma lista de fotografias "
               "com etiquetas e descrições. Devolves APENAS JSON: {\"ids\": [ids das fotos que correspondem]}. Sem texto extra.")
     try:
-        chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"search-{gallery_id}-{uuid.uuid4()}", system_message=system).with_model("openai", "gpt-5.4")
-        msg = UserMessage(text=f"Consulta: {query}\n\nFotografias:\n{json.dumps(catalog, ensure_ascii=False)}")
-        resp = await chat.send_message(msg)
-        text = (resp if isinstance(resp, str) else str(resp)).replace("```json", "").replace("```", "").strip()
+        resp = await ai_compat.chat_complete(system, f"Consulta: {query}\n\nFotografias:\n{json.dumps(catalog, ensure_ascii=False)}")
+        text = resp.replace("```json", "").replace("```", "").strip()
         ids = json.loads(text).get("ids", [])
     except Exception as e:
         logging.warning(f"AI search failed: {e}")
@@ -2147,9 +2135,7 @@ async def ai_chat(payload: AiChatIn):
         system += f"\n\nHistórico recente da conversa:\n{convo}"
 
     try:
-        chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"assist-{session_id}", system_message=system).with_model("openai", "gpt-5.4")
-        reply = await chat.send_message(UserMessage(text=payload.message))
-        reply = reply if isinstance(reply, str) else str(reply)
+        reply = await ai_compat.chat_complete(system, payload.message)
     except Exception as e:
         logging.warning(f"AI chat failed: {e}")
         raise HTTPException(500, "O assistente não está disponível de momento.")

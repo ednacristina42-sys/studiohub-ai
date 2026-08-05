@@ -2,15 +2,14 @@
 Camada de compatibilidade de IA — usa a OpenAI oficial com a TUA chave.
 
 - Lê OPENAI_API_KEY do backend/.env (a tua própria chave OpenAI).
-- Chama a API pública da OpenAI (https://api.openai.com) — SEM Emergent Key,
-  SEM emergentintegrations, SEM base URL da Emergent.
-- Modelo configurável via OPENAI_MODEL (default: "gpt-5.4").
+- Chama a API pública da OpenAI (https://api.openai.com) — sem chaves nem base URLs de terceiros.
+- Modelo configurável via OPENAI_MODEL (default: "gpt-4o").
 """
 import os
 from openai import AsyncOpenAI
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5.4")
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o")
 # base_url só é passado se explicitamente definido; caso contrário usa o default oficial da OpenAI.
 OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "") or None
 

@@ -1,0 +1,29 @@
+"""
+Camada de compatibilidade de IA — usa a OpenAI oficial com a TUA chave.
+
+- Lê OPENAI_API_KEY do backend/.env (a tua própria chave OpenAI).
+- Chama a API pública da OpenAI (https://api.openai.com) — SEM Emergent Key,
+  SEM emergentintegrations, SEM base URL da Emergent.
+- Modelo configurável via OPENAI_MODEL (default: "gpt-5.4").
+"""
+import os
+from openai import AsyncOpenAI
+
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5.4")
+# base_url só é passado se explicitamente definido; caso contrário usa o default oficial da OpenAI.
+OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "") or None
+
+_client = AsyncOpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
+
+
+async def chat_complete(system: str, message: str, model: str | None = None) -> str:
+    """Uma volta simples de chat (system + user) -> texto de resposta."""
+    resp = await _client.chat.completions.create(
+        model=model or OPENAI_MODEL,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": message},
+        ],
+    )
+    return (resp.choices[0].message.content or "").strip()

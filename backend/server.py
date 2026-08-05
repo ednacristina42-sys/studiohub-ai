@@ -20,6 +20,7 @@ from datetime import datetime, timezone, timedelta, date
 import httpx
 import stripe
 from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+import ai_compat
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -2260,9 +2261,7 @@ async def ai_assistant(payload: AiAssistantIn):
         system += f"\n\nHistórico recente da conversa:\n{convo}"
 
     try:
-        chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"asst-{session_id}", system_message=system).with_model("openai", "gpt-5.4")
-        reply = await chat.send_message(UserMessage(text=payload.message))
-        reply = reply if isinstance(reply, str) else str(reply)
+        reply = await ai_compat.chat_complete(system, payload.message)
     except Exception as e:
         logging.warning(f"AI assistant ({assistant}) failed: {e}")
         raise HTTPException(500, "O assistente não está disponível de momento.")
